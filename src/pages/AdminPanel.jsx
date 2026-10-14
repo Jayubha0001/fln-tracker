@@ -4,6 +4,8 @@ import Students from './Students.jsx';
 import Entry from './Entry.jsx';
 import Summary from './Summary.jsx';
 import AdminStudentImport from './AdminStudentImport.jsx';
+import AdminReports from './AdminReports.jsx';
+import { loadAllRows } from '../lib/loadAllRows';
 
 const emptySchool = {
   district: '',
@@ -20,6 +22,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   const [accounts, setAccounts] = useState({});
   const [createdCredentials, setCreatedCredentials] = useState([]);
   const [accountResults, setAccountResults] = useState([]);
+  const [resetCredential, setResetCredential] = useState(null);
   const [form, setForm] = useState(emptySchool);
   const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -34,15 +37,12 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   }
 
   async function loadSchools() {
-    const [{ data: schoolRows, error: schoolError }, { data: profileRows, error: profileError }] =
-      await Promise.all([
-        supabase.from('schools').select('*').order('district').order('block').order('name'),
-        supabase.from('profiles').select('school_id').eq('role', 'school'),
-      ]);
-    if (schoolError) throw schoolError;
-    if (profileError) throw profileError;
-    setSchools(schoolRows || []);
-    setAccounts(Object.fromEntries((profileRows || []).map((row) => [row.school_id, true])));
+    const [schoolRows, profileRows] = await Promise.all([
+      loadAllRows(supabase.from('schools').select('*').order('district').order('block').order('name')),
+      loadAllRows(supabase.from('profiles').select('school_id').eq('role', 'school')),
+    ]);
+    setSchools(schoolRows);
+    setAccounts(Object.fromEntries(profileRows.map((row) => [row.school_id, true])));
     setSchoolsLoaded(true);
   }
 
@@ -204,6 +204,51 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
     }
   }
 
+  async function resetSchoolPassword(school) {
+    if (!accounts[school.id]) {
+      setError(`${school.code}: school profile મળતું નથી. Password resetથી નવું account બનાવાતું નથી.`);
+      return;
+    }
+    if (!confirm(`${school.name} · ${school.code}નું school password reset કરવું? Reset થયા પછી હાલનો password તરત અમાન્ય થશે.`)) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    setResetCredential(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-school-password-reset', {
+        body: { schoolId: school.id },
+      });
+      if (invokeError) {
+        let detail = invokeError.message;
+        if (invokeError.context instanceof Response) {
+          const text = await invokeError.context.clone().text();
+          try {
+            detail = JSON.parse(text).error || text || detail;
+          } catch {
+            if (text) detail = text;
+          }
+        }
+        throw new Error(detail);
+      }
+      if (!data?.temporaryPassword || data.schoolCode !== school.code || data.mustChangePassword !== true) {
+        throw new Error(data?.resetApplied
+          ? 'Password reset લાગુ થયું હોઈ શકે છે પરંતુ one-time credential response નથી. ફરી reset ન કરો; પહેલા account verify કરો.'
+          : 'સફળ reset અને mandatory password-changeની પુષ્ટિ મળતી નથી; credential દર્શાવ્યો નથી.');
+      }
+      setResetCredential({
+        schoolId: school.id,
+        schoolCode: school.code,
+        schoolName: school.name,
+        password: data.temporaryPassword,
+      });
+      setMessage(`${school.code} માટે password reset સફળ. Password ફક્ત આ સત્રમાં એક વાર દેખાશે.`);
+    } catch (cause) {
+      setError(`${school.code} reset નિષ્ફળ/અસ્પષ્ટ: ${cause.message} ફરી પ્રયાસ કરતાં પહેલાં Auth user, profile અને audit log તપાસો.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function downloadCredentials() {
     const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const lines = [
@@ -238,6 +283,15 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
         <h2>તાલુકાવાર શાળાઓ ({schools.length})</h2>
         {error && <p className="error" role="alert">{error}</p>}
         {message && <p className="success" role="status">{message}</p>}
+        {resetCredential && (
+          <section className="card credential-result" aria-live="polite">
+            <h3>One-time reset credential · {resetCredential.schoolName} ({resetCredential.schoolCode})</h3>
+            <p className="error">આ password ફક્ત આ વખતના સત્રમાં દેખાડાય છે. સુરક્ષિત રીતે શાળાને આપો; browser/local storageમાં સાચવાતો નથી.</p>
+            <p>Login ID: <b>{resetCredential.schoolCode}</b></p>
+            <code>{resetCredential.password}</code>
+            <button type="button" onClick={() => setResetCredential(null)}>Password છુપાવો</button>
+          </section>
+        )}
         <section className="card">
           <h3>શાળા Login Accounts</h3>
           <p className="muted">
@@ -287,10 +341,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
 
         <AdminStudentImport supabase={supabase} schools={schools} schoolsLoaded={schoolsLoaded} />
 
-        <section className="card">
-          <h3>તમામ શાળાઓનો સારાંશ</h3>
-          <Summary supabase={supabase} schools={schools} isAdmin />
-        </section>
+        <AdminReports supabase={supabase} />
 
         <AdminSchoolWorkspace supabase={supabase} schools={schools} onEntryDirtyChange={setWorkspaceEntryDirty} />
 
@@ -352,6 +403,9 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
                   <button onClick={() => startEdit(school)}>સંપાદિત કરો</button>
                   {!accounts[school.id] && school.active && (
                     <button disabled={busy} onClick={() => createAccounts(school.id)}>Login બનાવો</button>
+                  )}
+                  {accounts[school.id] && school.active && (
+                    <button disabled={busy} onClick={() => resetSchoolPassword(school)}>Reset Password</button>
                   )}
                 </div>
               </li>

@@ -72,6 +72,14 @@ button.mini { padding: 4px 8px; font-size: 12px; margin: 2px; white-space: nowra
 .report-table { min-width: 720px; }
 .report-table th, .report-table td { padding: 9px; }
 .report-table td.left { text-align: left; min-width: 180px; }
+.admin-reports { width: 100%; }
+.report-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 8px; align-items: end; }
+.report-filters label { min-width: 0; margin: 0; }
+.admin-reports h3 { margin: 18px 0 8px; }
+.admin-reports .scroll { max-height: 65vh; }
+.admin-reports .report-table { min-width: 980px; }
+.admin-reports .report-table thead th { position: sticky; top: 0; z-index: 2; }
+.credential-result button { margin-left: 10px; }
 .stlist { padding-left: 24px; } .stlist li { padding: 4px 6px; margin-bottom: 3px; border-radius: 4px; font-size: 14px; }
 .stlist small { color: #5b6b78; margin-right: 4px; }
 .stmt.lv-B, .stmt.lv-P, .stmt.lv-G { border-left: 6px solid #ccc; }

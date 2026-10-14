@@ -277,6 +277,7 @@ export default function Students({ supabase, school, dhoran }) {
           school_id: school.id,
           month: entry.month,
           dhoran: entry.dhoran,
+          assessment_date: null,
           answers: entry.answers || {},
           updated_at: entry.updatedAt ? new Date(entry.updatedAt).toISOString() : new Date().toISOString(),
         }] : [];
@@ -285,7 +286,7 @@ export default function Students({ supabase, school, dhoran }) {
         const { error: entryError } = await supabase
           .from('entries')
           .upsert(remoteEntries.slice(offset, offset + IMPORT_BATCH_SIZE), {
-            onConflict: 'student_id,month',
+            onConflict: 'student_id,month,dhoran',
           });
         if (entryError) throw entryError;
       }

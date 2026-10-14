@@ -1,2 +1,8 @@
 [functions.create-school-account]
 verify_jwt = true
+
+[functions.admin-school-password-reset]
+verify_jwt = true
+
+[functions.admin-reports]
+verify_jwt = true

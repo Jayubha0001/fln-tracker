@@ -14,8 +14,10 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   const [rowErrors, setRowErrors] = useState([]);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const [assessmentDate, setAssessmentDate] = useState(() => defaultAssessmentDate(month));
+  const [assessmentDateDirty, setAssessmentDateDirty] = useState(false);
 
-  const dirty = Object.keys(draft).length > 0;
+  const dirty = Object.keys(draft).length > 0 || (assessmentDateDirty && entries?.length > 0);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -51,6 +53,10 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
       if (mounted) {
         setStudents(studentRows);
         setEntries(entryRows);
+        const savedDates = [...new Set(entryRows.map((entry) => entry.assessment_date).filter(Boolean))];
+        if (savedDates.length === 1) setAssessmentDate(savedDates[0]);
+        else if (!savedDates.length) setAssessmentDate(defaultAssessmentDate(month));
+        setAssessmentDateDirty(false);
       }
     }
     load().catch((cause) => {
@@ -58,6 +64,11 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
     });
     return () => { mounted = false; };
   }, [supabase, school.id, dhoran, month]);
+
+  useEffect(() => {
+    setAssessmentDate(defaultAssessmentDate(month));
+    setAssessmentDateDirty(false);
+  }, [month]);
 
   function changeAnswers(studentId, answers) {
     setDraft((current) => ({ ...current, [studentId]: answers }));
@@ -76,7 +87,13 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
     let successfulRows = 0;
     const failures = [];
     const savedRows = [];
-    const pending = Object.entries(draft);
+    const pendingByStudent = new Map(Object.entries(draft).map(([studentId, answers]) => [studentId, answers]));
+    if (assessmentDateDirty) {
+      entries.forEach((entry) => {
+        if (!pendingByStudent.has(entry.student_id)) pendingByStudent.set(entry.student_id, entry.answers || {});
+      });
+    }
+    const pending = [...pendingByStudent.entries()];
 
     for (const [studentId, answers] of pending) {
       const student = students.find((item) => item.id === studentId);
@@ -85,13 +102,14 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
         school_id: school.id,
         month,
         dhoran,
+        assessment_date: assessmentDate || null,
         answers,
         updated_at: new Date().toISOString(),
       };
       let saveError;
       try {
         ({ error: saveError } = await supabase.from('entries').upsert(row, {
-          onConflict: 'student_id,month',
+          onConflict: 'student_id,month,dhoran',
         }));
       } catch (cause) {
         saveError = { message: cause.message || 'Supabase request નિષ્ફળ.' };
@@ -120,6 +138,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
         return next;
       });
       setSavedMessage(`${successfulRows} વિદ્યાર્થીની એન્ટ્રી Supabaseમાં સાચવાઈ.`);
+      if (!failures.length) setAssessmentDateDirty(false);
     }
     setRowErrors(failures);
     if (failures.length) {
@@ -176,6 +195,20 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
           <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}>ગ્રીડ</button>
           <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>કાર્ડ</button>
         </div>
+        <label className="assessment-date">
+          મૂલ્યાંકન તારીખ
+          <input
+            type="date"
+            value={assessmentDate}
+            min={`${month}-01`}
+            max={monthEndDate(month)}
+            onChange={(event) => {
+              setAssessmentDate(event.target.value);
+              setAssessmentDateDirty(true);
+              setSavedMessage('');
+            }}
+          />
+        </label>
       </div>
 
       {view === 'grid' ? (
@@ -213,6 +246,16 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
       </section>
     </div>
   );
+}
+
+function defaultAssessmentDate(month) {
+  const today = new Date().toISOString().slice(0, 10);
+  return today.startsWith(`${month}-`) ? today : `${month}-01`;
+}
+
+function monthEndDate(month) {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
 }
 
 function RowSaveErrors({ errors }) {

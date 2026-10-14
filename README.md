@@ -129,10 +129,16 @@ schema and reviewing the SQL. It is not run automatically by the app.
 Assessment entries are stored in `public.entries`: `school_id` identifies the
 school, `student_id` the student, `dhoran` the grade, `month` the assessment
 period (`YYYY-MM`), and `answers` the statement-number-to-boolean JSON object.
-The existing primary key is `(student_id, month)`, so saving again updates the
-same student's period entry rather than inserting a duplicate. School entry
-access remains restricted by the existing `current_school_id()` RLS policy;
-Admin access uses `is_admin()`.
+The initial schema's primary key is `(student_id, month)`. Migration
+`202610140001_admin_reporting_and_password_audit.sql` safely changes it to
+`(student_id, month, dhoran)`, so one student can have a separate entry for
+Balvatika/Standard 1/Standard 2 in a month. There is still one entry per
+student, grade, and month: separate assessment types or multiple assessment
+dates in that same month are not distinct records. Re-saving that key updates
+the existing row. Historical assessment dates remain `NULL` because the old
+`updated_at` save time cannot establish the original assessment date.
+School entry access remains restricted by the existing `current_school_id()`
+RLS policy; Admin access uses `is_admin()`.
 
 The Entry grid now keeps edits as an unsaved draft until **એન્ટ્રી સાચવો** is
 clicked. It reports confirmed saved-row counts and individual row errors,
@@ -140,8 +146,58 @@ loads stored answers when a school/grade/month is reopened, and warns before
 leaving with unsaved changes. The Summary tab separates Balvatika, Standard 1,
 and Standard 2, filters by school/grade/month, and exports grade, school,
 student, and skill sheets to Excel. Admins can use **તમામ શાળાઓનો સારાંશ** in
-the Admin Panel to export authorized records across schools. No schema
-migration is required for these changes.
+the Admin Panel. Its **દિવસવાર એન્ટ્રી રિપોર્ટ** and Excel export are served by
+an Admin-authorized Edge Function. Filters include a date range (up to 93
+calendar days), exact school code, district, taluka, grade, and assessment
+month. Date range filters use `updated_at` (last save timestamp), not
+`assessment_date`; the export keeps these two fields separate. The synchronous
+report is capped at 50,000 matching entries; use smaller date/month/grade/school
+filters for larger ranges. For sustained exports beyond that cap, deploy a
+background export/managed storage workflow and review Edge Function and
+database capacity before 33,000-school rollout.
+
+### Apply the Admin reporting migration and deploy functions
+
+The application does not run migrations against Supabase. First back up the
+production database and inspect the current `public.entries` primary key,
+`profiles.must_change_password`, and the target Supabase project. The migration
+adds nullable `entries.assessment_date`, a grade-aware unique key and report
+indexes, and the password-reset audit table; it does not delete or rewrite
+existing entries. Its `DO` block stops if existing data prevents the new key.
+Historical dates intentionally stay `NULL`.
+
+After reviewing the full SQL file, an authorized operator can apply only this
+migration in **Supabase Dashboard → SQL Editor**. Do not blindly replay the
+initial schema migration. Confirm the dashboard project ref is the same one
+used by Vercel's `VITE_SUPABASE_URL`. Then deploy the two existing function
+folders from the repository root using Windows PowerShell:
+
+```powershell
+supabase login
+supabase link --project-ref nutnaymoiazrhhwgqlyv
+supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv
+supabase functions deploy admin-school-password-reset --project-ref nutnaymoiazrhhwgqlyv
+supabase functions list --project-ref nutnaymoiazrhhwgqlyv
+```
+
+`supabase/config.toml` keeps `verify_jwt = true` for both functions. The
+functions independently verify the JWT and active Admin profile. They require
+the standard `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Supabase Edge
+Function secrets only; never set the service-role key in Vercel or a `VITE_`
+variable. Password reset updates only the verified school Auth user, sets the
+mandatory password-change flag after the Auth password update trigger runs,
+records a password-free audit result, and returns its random temporary
+credential only on a fully successful response. If the response is lost or
+audit/flag setup fails, do not assume the password; verify Auth/profile/audit
+state before any further reset.
+
+Test with one filtered school/date range first. In Admin Panel, run the report,
+check that `Assessment Date` may be blank for historical rows while `Saved At`
+is populated, and download a small Excel export. Reset one test school only;
+check that its active profile/Auth UUID match the selected school, the audit
+row has no credential, and its next login requires password change. Do not
+claim production migration, deployment, or live functionality until checked
+against the intended Supabase project.
 
 ## Data access and existing offline data
 
