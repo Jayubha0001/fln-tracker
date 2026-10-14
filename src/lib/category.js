@@ -1,10 +1,11 @@
 import { STATEMENTS } from '../data/statements';
+import { GRADE_RULES } from '../../supabase/functions/_shared/assessmentRules.js';
 
 // PDF mujab: Udayman = 0..udayMax, Nipun = nipunMin..total, vachche Pragatishil
 export const CLASSES = {
-  B: { label: 'બાલવાટિકા', total: 6, udayMax: 1, nipunMin: 5 },
-  '1': { label: 'ધોરણ 1', total: 22, udayMax: 6, nipunMin: 18 },
-  '2': { label: 'ધોરણ 2', total: 30, udayMax: 9, nipunMin: 24 },
+  B: { label: GRADE_RULES.B.label, total: GRADE_RULES.B.statementIds.length, udayMax: GRADE_RULES.B.udayMax, nipunMin: GRADE_RULES.B.nipunMin },
+  '1': { label: GRADE_RULES['1'].label, total: GRADE_RULES['1'].statementIds.length, udayMax: GRADE_RULES['1'].udayMax, nipunMin: GRADE_RULES['1'].nipunMin },
+  '2': { label: GRADE_RULES['2'].label, total: GRADE_RULES['2'].statementIds.length, udayMax: GRADE_RULES['2'].udayMax, nipunMin: GRADE_RULES['2'].nipunMin },
 };
 
 export const CAT = {

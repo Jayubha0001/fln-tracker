@@ -1,6 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as XLSX from 'npm:@e965/xlsx@0.20.3';
 import { buildReportMetrics } from '../_shared/reportMetrics.js';
+import { GRADE_RULES } from '../_shared/assessmentRules.js';
+import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -172,6 +174,91 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
   };
 }
 
+async function buildSchoolYearReport(client: ReturnType<typeof createClient>, schoolId: string) {
+  const { data: school, error: schoolError } = await client.from('schools')
+    .select('id,code,name,district,block')
+    .eq('id', schoolId)
+    .maybeSingle();
+  if (schoolError) throw schoolError;
+  if (!school) return null;
+
+  const students = await loadRows(
+    client.from('students').select('id,name,dhoran').eq('school_id', schoolId).order('name'),
+    PAGE_SIZE,
+    MAX_REPORT_ROWS,
+  );
+  const entries = await loadRows(
+    client.from('entries')
+      .select('student_id,school_id,month,dhoran,answers,updated_at')
+      .eq('school_id', schoolId)
+      .in('month', SCHOOL_YEAR_MONTHS.map((month) => month.key))
+      .order('month')
+      .order('student_id'),
+    PAGE_SIZE,
+    MAX_REPORT_ROWS,
+  );
+  const gradeRows = buildSchoolYearRows(students, entries);
+  return { school, gradeRows };
+}
+
+function schoolYearWorkbook(report: NonNullable<Awaited<ReturnType<typeof buildSchoolYearReport>>>) {
+  const workbook = XLSX.utils.book_new();
+  const { school, gradeRows } = report;
+  const actionPlanRows = SCHOOL_YEAR_MONTHS.map((month, index) => {
+    const row: Record<string, string | number> = {
+      'માસ': month.label,
+      'શાળા કોડ': school.code,
+      'શાળાનું નામ': school.name,
+    };
+    for (const grade of GRADES) {
+      const result = gradeRows[grade][index];
+      row[`${GRADE_RULES[grade].label} – નોંધાયેલા`] = result.enrolled;
+      row[`${GRADE_RULES[grade].label} – સાચવેલી`] = result.saved;
+      for (const category of ['U', 'P', 'N'] as const) {
+        const column = `${GRADE_RULES[grade].label} – ${category === 'U' ? 'ઉદયમાન' : category === 'P' ? 'પ્રગતિશીલ' : 'નિપુણ'}`;
+        row[`${column} (ગણતરી)`] = result[category];
+        row[`${column} (%)`] = result.enrolled
+          ? `${Math.round(result[category] * 1000 / result.enrolled) / 10}%`
+          : '—';
+      }
+    }
+    return row;
+  });
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(actionPlanRows), 'FLN Action Plan');
+
+  for (const grade of GRADES) {
+    const threshold = GRADE_RULES[grade];
+    const rows = gradeRows[grade].map((month) => ({
+      'માસ': month.label,
+      'ધોરણ': threshold.label,
+      'નોંધાયેલા વિદ્યાર્થીઓ': month.enrolled,
+      'સાચવેલી એન્ટ્રી': month.saved,
+      'પૂર્ણ મૂલ્યાંકન': month.complete,
+      'અપૂર્ણ એન્ટ્રી': month.incomplete,
+      'બાકી': month.pending,
+      [`ઉદયમાન (0 થી ${threshold.udayMax}) – સંખ્યા`]: month.U,
+      'ઉદયમાન (%)': month.enrolled ? `${Math.round(month.U * 1000 / month.enrolled) / 10}%` : '—',
+      'પ્રગતિશીલ – સંખ્યા': month.P,
+      'પ્રગતિશીલ (%)': month.enrolled ? `${Math.round(month.P * 1000 / month.enrolled) / 10}%` : '—',
+      [`નિપુણ (${threshold.nipunMin} થી ${threshold.statementIds.length}) – સંખ્યા`]: month.N,
+      'નિપુણ (%)': month.enrolled ? `${Math.round(month.N * 1000 / month.enrolled) / 10}%` : '—',
+    }));
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), `ધોરણ ${grade}`);
+  }
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+    { 'માહિતી': 'શાળા', 'વિગત': `${school.name} (${school.code})` },
+    { 'માહિતી': 'જિલ્લો / તાલુકો', 'વિગત': `${school.district} / ${school.block}` },
+    { 'માહિતી': 'અપૂર્ણ એન્ટ્રી', 'વિગત': 'બધા learning outcomesના હા/ના જવાબ ન હોય તેવી entry.' },
+    { 'માહિતી': 'શ્રેણી ટકાવારીનો આધાર', 'વિગત': 'દરેક ધોરણના નોંધાયેલા વિદ્યાર્થીઓ; અધૂરા અને બાકી વિદ્યાર્થીઓ category countમાં આવતા નથી.' },
+    ...GRADES.map((grade) => ({
+      'માહિતી': GRADE_RULES[grade].label,
+      'વિગત': `કુલ ${GRADE_RULES[grade].statementIds.length}; ઉદયમાન 0–${GRADE_RULES[grade].udayMax}; પ્રગતિશીલ ${GRADE_RULES[grade].udayMax + 1}–${GRADE_RULES[grade].nipunMin - 1}; નિપુણ ${GRADE_RULES[grade].nipunMin}–${GRADE_RULES[grade].statementIds.length}.`,
+    })),
+  ]), 'માપદંડ');
+
+  return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
+}
+
 function makeWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: Filters) {
   const workbook = XLSX.utils.book_new();
   const statementCount = 30;
@@ -267,22 +354,43 @@ Deno.serve(async (request) => {
     console.error('Admin report authorization lookup failed:', profileError.message);
     return jsonResponse(500, { error: 'Admin અધિકાર ચકાસી શકાયા નથી.' });
   }
-  if (profile?.role !== 'admin' || !profile.active) return jsonResponse(403, { error: 'સક્રિય Admin અધિકાર જરૂરી છે.' });
+  if (!profile?.active || !['admin', 'district', 'block', 'school'].includes(profile.role)) {
+    return jsonResponse(403, { error: 'સક્રિય account report માટે અધિકૃત નથી.' });
+  }
 
   const userClient = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  let body: { action?: unknown; filters?: unknown; page?: unknown };
+  let body: { action?: unknown; filters?: unknown; page?: unknown; schoolId?: unknown };
   try {
     body = await request.json();
   } catch {
     return jsonResponse(400, { error: 'Request માન્ય JSON નથી.' });
   }
-  const filters = validateFilters(body.filters);
-  if (typeof filters === 'string') return jsonResponse(400, { error: filters });
-
   try {
+    const allowedRoles = ['admin', 'district', 'block', 'school'];
+    if (!allowedRoles.includes(profile.role)) {
+      return jsonResponse(403, { error: 'સક્રિય account report માટે અધિકૃત નથી.' });
+    }
+    if (body.action === 'school-year-report') {
+      if (typeof body.schoolId !== 'string'
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.schoolId)) {
+        return jsonResponse(400, { error: 'School UUID માન્ય નથી.' });
+      }
+      const schoolReport = await buildSchoolYearReport(userClient, body.schoolId);
+      if (!schoolReport) return jsonResponse(404, { error: 'આ accountને આ શાળાનો report જોવાની પરવાનગી નથી અથવા શાળા મળી નથી.' });
+      return new Response(schoolYearWorkbook(schoolReport), {
+        headers: {
+          ...corsHeaders,
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="fln-school-${schoolReport.school.code}-2026-27.xlsx"`,
+        },
+      });
+    }
+    const filters = validateFilters(body.filters);
+    if (typeof filters === 'string') return jsonResponse(400, { error: filters });
     const report = await buildReport(userClient, filters);
     if (body.action === 'export') {
       const workbook = makeWorkbook(report, filters);
@@ -331,7 +439,17 @@ Deno.serve(async (request) => {
         maxRows: MAX_REPORT_ROWS,
       });
     }
-    console.error('Admin report query failed:', cause);
-    return jsonResponse(500, { error: 'Admin report બનાવી શકાયો નથી; Edge Function logs તપાસો.' });
+    const databaseError = cause as { code?: string; message?: string; details?: string; hint?: string };
+    const code = typeof databaseError?.code === 'string' ? databaseError.code : 'UNKNOWN';
+    const message = typeof databaseError?.message === 'string' ? databaseError.message.slice(0, 500) : 'અજાણી server ભૂલ.';
+    console.error('Admin report query failed:', { code, message, details: databaseError?.details, hint: databaseError?.hint });
+    if (code === '42703' && /assessment_date/i.test(message)) {
+      return jsonResponse(500, {
+        error: `SQLSTATE ${code}: ${message} Apply the additive repair in migration 202610140004_admin_report_assessment_date_compat.sql, then reload the PostgREST schema cache.`,
+        code,
+        message,
+      });
+    }
+    return jsonResponse(500, { error: `Report નિષ્ફળ (SQLSTATE ${code}): ${message}`, code, message });
   }
 });

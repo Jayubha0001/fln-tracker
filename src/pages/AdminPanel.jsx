@@ -5,7 +5,9 @@ import Entry from './Entry.jsx';
 import Summary from './Summary.jsx';
 import AdminStudentImport from './AdminStudentImport.jsx';
 import AdminReports from './AdminReports.jsx';
-import { loadAllRows } from '../lib/loadAllRows';
+import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
+import AdminSchoolImport from './AdminSchoolImport.jsx';
+import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 
 const emptySchool = {
   district: '',
@@ -19,6 +21,9 @@ const emptySchool = {
 export default function AdminPanel({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
   const [schoolsLoaded, setSchoolsLoaded] = useState(false);
+  const [schoolPage, setSchoolPage] = useState(0);
+  const [schoolPageCount, setSchoolPageCount] = useState(0);
+  const schoolPageSize = 100;
   const [accounts, setAccounts] = useState({});
   const [createdCredentials, setCreatedCredentials] = useState([]);
   const [accountResults, setAccountResults] = useState([]);
@@ -37,18 +42,26 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   }
 
   async function loadSchools() {
-    const [schoolRows, profileRows] = await Promise.all([
-      loadAllRows(supabase.from('schools').select('*').order('district').order('block').order('name')),
-      loadAllRows(supabase.from('profiles').select('school_id').eq('role', 'school')),
-    ]);
-    setSchools(schoolRows);
-    setAccounts(Object.fromEntries(profileRows.map((row) => [row.school_id, true])));
+    const from = schoolPage * schoolPageSize;
+    const { data: schoolRows, error: schoolError, count } = await supabase.from('schools')
+      .select('*', { count: 'exact' })
+      .order('district').order('block').order('name')
+      .range(from, from + schoolPageSize - 1);
+    if (schoolError) throw schoolError;
+    const schoolIds = (schoolRows || []).map((school) => school.id);
+    const { data: profileRows, error: profileError } = schoolIds.length
+      ? await supabase.from('profiles').select('school_id').eq('role', 'school').in('school_id', schoolIds)
+      : { data: [], error: null };
+    if (profileError) throw profileError;
+    setSchools(schoolRows || []);
+    setAccounts(Object.fromEntries((profileRows || []).map((row) => [row.school_id, true])));
+    setSchoolPageCount(Math.ceil((count || 0) / schoolPageSize));
     setSchoolsLoaded(true);
   }
 
   useEffect(() => {
     loadSchools().catch((cause) => setError(`શાળાઓ લોડ થઈ શકી નથી: ${cause.message}`));
-  }, [supabase]);
+  }, [supabase, schoolPage]);
 
   function startEdit(school) {
     setEditingId(school.id);
@@ -280,7 +293,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
         </div>
       </header>
       <main>
-        <h2>તાલુકાવાર શાળાઓ ({schools.length})</h2>
+        <h2>તાલુકાવાર શાળાઓ (પાનું {Math.min(schoolPage + 1, schoolPageCount)}/{schoolPageCount})</h2>
         {error && <p className="error" role="alert">{error}</p>}
         {message && <p className="success" role="status">{message}</p>}
         {resetCredential && (
@@ -303,9 +316,10 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
             disabled={busy || !schoolsLoaded || !schools.some((school) => school.active && !accounts[school.id])}
             onClick={() => createAccounts()}
           >
-            {busy ? 'Accounts બની રહ્યા છે…' : 'બધી બાકી સક્રિય શાળાઓના Login બનાવો'}
+            {busy ? 'Accounts બની રહ્યા છે…' : 'આ પાનાની બધી બાકી સક્રિય શાળાઓના Login બનાવો'}
           </button>
         </section>
+        <AdminScopedAccountManagement supabase={supabase} />
         {createdCredentials.length > 0 && (
           <section className="card credential-result">
             <h3>એક વખત દર્શાવેલા Login Credentials</h3>
@@ -339,7 +353,8 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           </section>
         )}
 
-        <AdminStudentImport supabase={supabase} schools={schools} schoolsLoaded={schoolsLoaded} />
+        <AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} />
+        <AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} />
 
         <AdminReports supabase={supabase} />
 
@@ -407,11 +422,17 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
                   {accounts[school.id] && school.active && (
                     <button disabled={busy} onClick={() => resetSchoolPassword(school)}>Reset Password</button>
                   )}
+                  {school.active && <SchoolYearReportButton supabase={supabase} school={school} />}
                 </div>
               </li>
             ))}
           </ul>
         )}
+        <div className="row between">
+          <button disabled={schoolPage <= 0 || busy} onClick={() => setSchoolPage((value) => value - 1)}>પાછળનું પાનું</button>
+          <span className="muted">શાળાઓ એક સમયે {schoolPageSize} જ લોડ થાય છે.</span>
+          <button disabled={!schoolPageCount || schoolPage + 1 >= schoolPageCount || busy} onClick={() => setSchoolPage((value) => value + 1)}>આગળનું પાનું</button>
+        </div>
       </main>
     </div>
   );

@@ -18,7 +18,8 @@ function errorMessage(error) {
   if (context instanceof Response) {
     return context.clone().text().then((text) => {
       try {
-        return JSON.parse(text).error || text || error.message;
+        const detail = JSON.parse(text).error || text || error.message;
+        return `HTTP ${context.status}: ${detail}`;
       } catch {
         return text || error.message;
       }

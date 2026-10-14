@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function ChangePassword({ supabase, school, onComplete, onSignOut }) {
+export default function ChangePassword({ supabase, school, profile, onComplete, onSignOut }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState('');
@@ -34,7 +34,10 @@ export default function ChangePassword({ supabase, school, onComplete, onSignOut
     <main className="auth-page">
       <form className="card auth-card" onSubmit={submit}>
         <h1>પ્રથમ Login: નવો Password સેટ કરો</h1>
-        <p className="muted">{school?.name || 'શાળા'} · School ID {school?.code}</p>
+        <p className="muted">
+          {school?.name || (profile?.role === 'district' ? `District ${profile.district_code}` : `Block ${profile.block_code}`)}
+          {school?.code ? ` · School ID ${school.code}` : ''}
+        </p>
         <p className="muted">Dashboard ખોલતાં પહેલાં one-time password બદલો.</p>
         <label>
           નવો password

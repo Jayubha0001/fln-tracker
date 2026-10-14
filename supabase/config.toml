@@ -4,5 +4,14 @@ verify_jwt = true
 [functions.admin-school-password-reset]
 verify_jwt = true
 
+[functions.admin-scoped-account-management]
+verify_jwt = true
+
 [functions.admin-reports]
+verify_jwt = true
+
+[functions.create-scoped-account]
+verify_jwt = true
+
+[functions.admin-import-schools]
 verify_jwt = true

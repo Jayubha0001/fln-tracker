@@ -5,7 +5,7 @@ import {
   parseAdminStudentWorkbook,
 } from '../lib/adminStudentImport';
 
-export default function AdminStudentImport({ supabase, schools, schoolsLoaded }) {
+export default function AdminStudentImport({ supabase, schoolsLoaded }) {
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -23,13 +23,21 @@ export default function AdminStudentImport({ supabase, schools, schoolsLoaded })
     setBusy(true);
     try {
       const records = parseAdminStudentWorkbook(await file.arrayBuffer());
-      const sourceCodes = new Set(records.map((row) => row.schoolCode).filter(Boolean));
-      const activeSchools = schools.filter((school) => school.active && sourceCodes.has(String(school.code).trim()));
+      const sourceCodes = [...new Set(records.map((row) => row.schoolCode).filter(Boolean))];
+      const sourceSchools = [];
+      for (let offset = 0; offset < sourceCodes.length; offset += 500) {
+        const { data, error: schoolError } = await supabase.from('schools')
+          .select('id,code,name,active,district,block,cluster')
+          .in('code', sourceCodes.slice(offset, offset + 500));
+        if (schoolError) throw schoolError;
+        sourceSchools.push(...(data || []));
+      }
+      const activeSchools = sourceSchools.filter((school) => school.active);
       const existingKeys = await loadExistingStudentKeys(
         supabase,
         [...new Set(activeSchools.map((school) => school.id))]
       );
-      setPreview(buildAdminStudentPreview(records, schools, existingKeys));
+      setPreview(buildAdminStudentPreview(records, sourceSchools, existingKeys));
     } catch (cause) {
       const safeMessages = new Set([
         'ફાઈલમાં worksheet મળી નથી.',

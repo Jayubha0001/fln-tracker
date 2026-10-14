@@ -7,6 +7,8 @@ import Students from './pages/Students.jsx';
 import Entry from './pages/Entry.jsx';
 import Summary from './pages/Summary.jsx';
 import ChangePassword from './pages/ChangePassword.jsx';
+import ScopedDashboard from './pages/ScopedDashboard.jsx';
+import SchoolYearReportButton from './components/SchoolYearReportButton.jsx';
 
 const nowKey = new Date().toISOString().slice(0, 7);
 
@@ -96,12 +98,22 @@ export default function App() {
           `Auth user અને public.profiles email મેળ ખાતા નથી (Auth user id ${session.user.id}). Dashboard SQL Editorમાં auth.users.email અને profiles.email સરખાવો.`
         );
       }
-      if (data.role !== 'admin' && data.role !== 'school') {
-        throw new Error('public.profiles.role માં admin અથવા school હોવું જોઈએ. અધિકૃત Admin role ચકાસે પછી ફરી login કરો.');
+      if (!['admin', 'school', 'district', 'block'].includes(data.role)) {
+        throw new Error('public.profiles.role માં admin, school, district અથવા block હોવું જોઈએ. અધિકૃત Admin role ચકાસે પછી ફરી login કરો.');
       }
       let profileData = { ...data, must_change_password: false };
       let schoolData = null;
-      if (data.role === 'school') {
+      if (data.role === 'school' || data.role === 'district' || data.role === 'block') {
+        if (data.role === 'district' || data.role === 'block') {
+          const { data: scope, error: scopeError } = await supabase
+            .from('profiles')
+            .select('district_code, block_code')
+            .eq('id', session.user.id)
+            .maybeSingle();
+          if (scopeError) throw scopeError;
+          if (!scope) throw new Error('District/Block accountનો scope મળ્યો નથી.');
+          profileData = { ...profileData, ...scope };
+        }
         const { data: passwordState, error: passwordStateError } = await supabase
           .from('profiles')
           .select('must_change_password')
@@ -110,7 +122,9 @@ export default function App() {
         if (passwordStateError) throw passwordStateError;
         if (!passwordState) throw new Error('આ account માટે profile મળી નથી.');
         profileData = { ...profileData, ...passwordState };
+      }
 
+      if (data.role === 'school') {
         const { data: schoolRow, error: schoolError } = await supabase
           .from('schools')
           .select('id, district, block, cluster, code, name, active')
@@ -159,17 +173,21 @@ export default function App() {
     );
   }
   if (!profile) return <main className="auth-page"><p>Account ચકાસી શકાયું નથી…</p></main>;
-  if (profile.role === 'school' && profile.must_change_password) {
+  if (profile.role !== 'admin' && profile.must_change_password) {
     return (
       <ChangePassword
         supabase={supabase}
         school={school}
+        profile={profile}
         onComplete={() => setProfile((current) => ({ ...current, must_change_password: false }))}
         onSignOut={signOut}
       />
     );
   }
   if (profile.role === 'admin') return <AdminPanel supabase={supabase} profile={profile} onSignOut={signOut} />;
+  if (profile.role === 'district' || profile.role === 'block') {
+    return <ScopedDashboard supabase={supabase} profile={profile} onSignOut={signOut} />;
+  }
   if (profile.role !== 'school' || !school) {
     return <main className="auth-page"><p className="error">આ account માટે યોગ્ય role સેટ નથી.</p><button onClick={signOut}>લૉગઆઉટ</button></main>;
   }
@@ -224,6 +242,9 @@ function SchoolTracker({ supabase, school, onSignOut }) {
           <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>એન્ટ્રી</button>
           <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>સારાંશ</button>
         </nav>
+        <div className="row">
+          <SchoolYearReportButton supabase={supabase} school={school} />
+        </div>
       </header>
       <main>
         {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}

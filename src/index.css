@@ -80,6 +80,24 @@ button.mini { padding: 4px 8px; font-size: 12px; margin: 2px; white-space: nowra
 .admin-reports .report-table { min-width: 980px; }
 .admin-reports .report-table thead th { position: sticky; top: 0; z-index: 2; }
 .credential-result button { margin-left: 10px; }
+.school-year-report-action { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.school-year-report-action .error { display: block; flex-basis: 100%; margin: 0; }
+.scoped-account-form { border-left: 5px solid #243a8c; }
+.scoped-account-management { width: 100%; }
+.scoped-account-tabs { margin: 8px 0 12px; }
+.scoped-account-tabs button { min-height: 48px; }
+.scoped-account-table { max-height: 65vh; margin-bottom: 10px; }
+.scoped-account-table .report-table { min-width: 980px; }
+.scoped-account-table th { position: sticky; top: 0; z-index: 2; }
+.scoped-account-actions { min-width: 150px; white-space: nowrap; }
+.scoped-account-actions button { padding: 8px 10px; }
+.scoped-account-actions span { display: block; font-size: 12px; }
+.scoped-search { max-width: 520px; }
+.scoped-account-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.scoped-account-filters label { min-width: 0; }
+.manager-selectors { align-items: end; flex-wrap: wrap; }
+.manager-selectors label { flex: 1 1 180px; }
+.manager-selectors .school-year-report-action { padding-bottom: 4px; }
 .stlist { padding-left: 24px; } .stlist li { padding: 4px 6px; margin-bottom: 3px; border-radius: 4px; font-size: 14px; }
 .stlist small { color: #5b6b78; margin-right: 4px; }
 .stmt.lv-B, .stmt.lv-P, .stmt.lv-G { border-left: 6px solid #ccc; }
@@ -136,6 +154,16 @@ table.thr tr.cur td:first-child { font-weight: 700; }
   .sheet { border-radius: 0; padding: 8px; }
   .fields input { border-bottom: 1px solid #000; }
   @page { size: A4 portrait; margin: 10mm; }
+}
+@media (max-width: 640px) {
+  .manager-selectors { display: block; }
+  .report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-filters button { width: 100%; min-height: 48px; }
+  .scoped-account-tabs { flex-direction: column; }
+  .scoped-account-tabs button { width: 100%; }
+  .scoped-account-filters { grid-template-columns: 1fr; gap: 2px; }
+  .school-card .school-actions { width: 100%; }
+  .school-year-report-action { width: 100%; }
 }
 
 @media (max-width: 640px) {

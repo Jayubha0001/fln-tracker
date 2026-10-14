@@ -140,6 +140,16 @@ the existing row. Historical assessment dates remain `NULL` because the old
 School entry access remains restricted by the existing `current_school_id()`
 RLS policy; Admin access uses `is_admin()`.
 
+Admins, School users, District and Block accounts can download a per-school
+2026/27 FLN Action Plan workbook. It contains a month-by-month matrix and
+separate Balvatika, Standard 1, and Standard 2 sheets. A category is assigned
+only when every outcome for that grade has a yes/no answer. Udayman,
+Pragatisheel, and Nipun thresholds use the existing FLN rules. Counts are
+students and percentages use that grade's enrolled count; incomplete and
+pending students are shown separately and are not included in a category.
+June 2026 is included as a reportable month, although the current Entry selector
+starts in July.
+
 The Entry grid now keeps edits as an unsaved draft until **એન્ટ્રી સાચવો** is
 clicked. It reports confirmed saved-row counts and individual row errors,
 loads stored answers when a school/grade/month is reopened, and warns before
@@ -156,6 +166,15 @@ filters for larger ranges. For sustained exports beyond that cap, deploy a
 background export/managed storage workflow and review Edge Function and
 database capacity before 33,000-school rollout.
 
+If the Admin report returns SQLSTATE `42703` naming
+`public.entries.assessment_date`, the live database is missing the nullable
+assessment-date column that the report exports separately from the `updated_at`
+save timestamp. Review and apply
+`supabase/migrations/202610140004_admin_report_assessment_date_compat.sql`
+in the matching Supabase project's SQL Editor. It only adds the nullable
+column/index if absent and reloads the PostgREST schema cache; it does not
+backfill unknown historical assessment dates or change existing rows.
+
 ### Apply the Admin reporting migration and deploy functions
 
 The application does not run migrations against Supabase. First back up the
@@ -166,23 +185,35 @@ indexes, and the password-reset audit table; it does not delete or rewrite
 existing entries. Its `DO` block stops if existing data prevents the new key.
 Historical dates intentionally stay `NULL`.
 
-After reviewing the full SQL file, an authorized operator can apply only this
-migration in **Supabase Dashboard → SQL Editor**. Do not blindly replay the
-initial schema migration. Confirm the dashboard project ref is the same one
-used by Vercel's `VITE_SUPABASE_URL`. Then deploy the two existing function
-folders from the repository root using Windows PowerShell:
+After reviewing each full SQL file, an authorized operator can apply the
+migrations in order in **Supabase Dashboard → SQL Editor**: first
+`202610140001_admin_reporting_and_password_audit.sql`, then
+`202610140002_scoped_district_block_accounts.sql`, then
+`202610140003_school_import_cluster_id.sql`, then
+`202610140004_admin_report_assessment_date_compat.sql` if needed, then
+`202610140005_scoped_password_reset_audit.sql` for District/Block account
+management. Do not blindly replay the
+initial schema migration. The second migration assumes School Code's first 4
+digits are District Code and first 6 digits are Block Code. It preserves
+existing Admin/School profiles, adds scoped read/write RLS for active schools,
+and requires a one-time password change for new regional accounts. Confirm the
+dashboard project ref is the same one used by Vercel's `VITE_SUPABASE_URL`.
+Then deploy the functions from the repository root using Windows PowerShell:
 
 ```powershell
 supabase login
 supabase link --project-ref nutnaymoiazrhhwgqlyv
 supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv
 supabase functions deploy admin-school-password-reset --project-ref nutnaymoiazrhhwgqlyv
+supabase functions deploy admin-scoped-account-management --project-ref nutnaymoiazrhhwgqlyv
+supabase functions deploy create-scoped-account --project-ref nutnaymoiazrhhwgqlyv
+supabase functions deploy admin-import-schools --project-ref nutnaymoiazrhhwgqlyv
 supabase functions list --project-ref nutnaymoiazrhhwgqlyv
 ```
 
-`supabase/config.toml` keeps `verify_jwt = true` for both functions. The
-functions independently verify the JWT and active Admin profile. They require
-the standard `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Supabase Edge
+`supabase/config.toml` keeps `verify_jwt = true` for every listed function.
+Admin-only functions independently verify the JWT and active Admin profile.
+They require the standard `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Supabase Edge
 Function secrets only; never set the service-role key in Vercel or a `VITE_`
 variable. Password reset updates only the verified school Auth user, sets the
 mandatory password-change flag after the Auth password update trigger runs,
@@ -190,6 +221,48 @@ records a password-free audit result, and returns its random temporary
 credential only on a fully successful response. If the response is lost or
 audit/flag setup fails, do not assume the password; verify Auth/profile/audit
 state before any further reset.
+
+The State Admin Panel's District/Block management lists prefix-derived areas,
+compares each scoped profile with its Auth user, and labels missing, inactive,
+first-password-change, and inconsistent accounts. Creation uses the existing
+`create-scoped-account` function. Scoped password resets use the separate
+Admin-authorized `admin-scoped-account-management` Edge Function and write
+password-free audit events to `scoped_password_reset_audit`. The function
+returns a temporary password only after Auth update, mandatory password-change
+flag, and audit insertion all succeed. It does not reset credentials while
+loading the management list.
+
+The Admin Panel has a per-school **વાર્ષિક શાળા FLN Report** Excel button and a
+District/Block account form. Login IDs are taken from school codes: District
+uses four digits (for example `2428`) and Block uses six (`242801`). Those
+users can edit student and entry data within their RLS-scoped active schools,
+but cannot manage schools, profiles, or accounts. The `admin-reports` function
+returns a specific database error; if it reports missing
+`public.entries.assessment_date`, apply migration 001 above. Test one regional
+account per level and confirm users cannot see/edit a school with another
+prefix before issuing more logins.
+
+### Importing schools
+
+Migration `202610140003_school_import_cluster_id.sql` adds the `cluster_id`
+text field for the source `ClusterId` identifier, separate from the existing
+human-readable `cluster` name, without rewriting existing school data. It is
+idempotent and asks PostgREST to reload its schema cache. If an import reports
+that `cluster_id` is missing, first apply or rerun this migration in the correct
+project's SQL Editor; it adds the column only if absent. If the column already
+exists but the error continues, reload the schema cache with
+`NOTIFY pgrst, 'reload schema';` and allow the API a short time to refresh.
+The Admin Panel import accepts
+Excel `.xlsx`/`.xls` and CSV files with `District`, `Block`, `ClusterId`,
+`Cluster`, `SchoolId`, and `School` columns. Store SchoolId as text in Excel
+when it has leading zeros. The browser preview sends bounded groups of at most
+500 rows to `admin-import-schools`; server-side preview checks `schools.code`.
+Import inserts only new codes using conflict-ignore semantics, never updates
+an existing school's name, UUID, students, or entries. A retry preview marks
+previously inserted codes as existing; after a partial import failure, run
+Preview again before selecting Import, rather than resending the full file
+without review. Admin school list is also paginated
+(100 rows per page), rather than loading all schools into the browser.
 
 Test with one filtered school/date range first. In Admin Panel, run the report,
 check that `Assessment Date` may be blank for historical rows while `Saved At`
