@@ -65,6 +65,30 @@ button.mini { padding: 4px 8px; font-size: 12px; margin: 2px; white-space: nowra
 .stmt.lv-B { border-left-color: #e8cf3a; } .stmt.lv-P { border-left-color: #e68ab4; } .stmt.lv-G { border-left-color: #6bb581; }
 .stmt { background: #fff !important; }
 .school { font-size: 12px; color: #5b6b78; margin: -4px 0 6px; line-height: 1.4; }
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.auth-card { width: min(100%, 420px); }
+.auth-card h1 { margin-bottom: 8px; }
+.card label { display: block; font-size: 14px; margin: 8px 0; }
+.card label input { display: block; }
+.card label.check-label { display: flex; align-items: center; gap: 8px; }
+.card label.check-label input { width: auto; margin: 0; }
+.error { color: #a31e24; background: #fff0f0; padding: 10px 12px; border-radius: 8px; }
+.success { color: #176b37; font-size: 14px; }
+.school-list { margin-top: 12px; }
+.school-card { align-items: center !important; flex-wrap: wrap; }
+.school-actions { flex-wrap: wrap; margin: 0; }
+.admin-import { border: 1px solid #c9d5dd; }
+.import-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.import-stats div { background: #eef6f9; border-radius: 8px; padding: 8px 10px; }
+.import-stats dt { color: #5b6b78; font-size: 13px; }
+.import-stats dd { margin: 2px 0 0; font-size: 20px; font-weight: 700; }
+.unmatched-schools, .matched-schools { list-style: none; padding: 0; }
+.unmatched-schools li, .matched-schools li { padding: 8px 10px; border-bottom: 1px solid #e1e8ed; }
+.unmatched-schools small { color: #a31e24; }
+.matched-schools small { display: block; color: #5b6b78; }
+.import-result { background: #e8f5eb; border-radius: 8px; padding: 10px 12px; margin: 8px 0; line-height: 1.6; }
+.import-result.warning { background: #fff4dd; color: #674600; }
+.credential-result code { display: inline-block; margin-top: 4px; padding: 4px 7px; background: #eef6f9; border-radius: 4px; }
 
 /* ---- Summary sheet (PDF page 2 jevu) ---- */
 .sheet { background: #d6eef3; padding: 14px; border-radius: 8px; margin-top: 8px; }
@@ -92,5 +116,3 @@ table.thr tr.cur td:first-child { font-weight: 700; }
   .fields input { border-bottom: 1px solid #000; }
   @page { size: A4 portrait; margin: 10mm; }
 }
-
-

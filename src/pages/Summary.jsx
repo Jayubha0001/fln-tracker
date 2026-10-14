@@ -1,58 +1,115 @@
-import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import * as XLSX from 'xlsx';
-import { db } from '../db';
+import { useEffect, useState } from 'react';
+import * as XLSX from '@e965/xlsx';
 import { CLASSES, CAT, MONTHS, calc } from '../lib/category';
-import { SCHOOL } from '../config/school';
 
-function loadInfo() {
-  try { return JSON.parse(localStorage.getItem('fln-school')) || {}; } catch { return {}; }
+function loadInfo(schoolId) {
+  try {
+    return JSON.parse(localStorage.getItem(`fln-school-${schoolId}`)) || {};
+  } catch {
+    return {};
+  }
 }
 
-export default function Summary({ dhoran, month }) {
-  const students = useLiveQuery(() => db.students.where('dhoran').equals(dhoran).sortBy('name'), [dhoran]);
-  const entries = useLiveQuery(() => db.entries.filter((e) => e.dhoran === dhoran).toArray(), [dhoran]);
-  const [info, setInfo] = useState(loadInfo);
-  if (!students || !entries) return <p>લોડ થાય છે…</p>;
+export default function Summary({ supabase, school, dhoran, month }) {
+  const [students, setStudents] = useState(null);
+  const [entries, setEntries] = useState(null);
+  const [info, setInfo] = useState(() => loadInfo(school.id));
+  const [error, setError] = useState('');
 
-  const upd = (k, v) => {
-    const n = { ...info, [k]: v };
-    setInfo(n);
-    try { localStorage.setItem('fln-school', JSON.stringify(n)); } catch { /* ignore */ }
+  useEffect(() => {
+    let mounted = true;
+    setStudents(null);
+    setEntries(null);
+    setError('');
+    async function load() {
+      const [{ data: studentRows, error: studentError }, { data: entryRows, error: entryError }] =
+        await Promise.all([
+          supabase.from('students').select('*')
+            .eq('school_id', school.id).eq('dhoran', dhoran).order('name'),
+          supabase.from('entries').select('*')
+            .eq('school_id', school.id).eq('dhoran', dhoran),
+        ]);
+      if (studentError) throw studentError;
+      if (entryError) throw entryError;
+      if (mounted) {
+        setStudents(studentRows || []);
+        setEntries(entryRows || []);
+      }
+    }
+    load().catch((cause) => {
+      if (mounted) setError(`સારાંશ લોડ થઈ શક્યો નથી: ${cause.message}`);
+    });
+    return () => { mounted = false; };
+  }, [supabase, school.id, dhoran]);
+
+  useEffect(() => {
+    setInfo(loadInfo(school.id));
+  }, [school.id]);
+
+  if (!students || !entries) {
+    return <p className={error ? 'error' : ''} role={error ? 'alert' : undefined}>{error || 'લોડ થાય છે…'}</p>;
+  }
+
+  const updateInfo = (key, value) => {
+    const next = { ...info, [key]: value };
+    setInfo(next);
+    try {
+      localStorage.setItem(`fln-school-${school.id}`, JSON.stringify(next));
+    } catch (cause) {
+      setError(`શિક્ષકની વિગતો આ device પર સાચવી શકાઈ નથી: ${cause.message}`);
+    }
   };
 
-  const c = CLASSES[dhoran];
-  const rows = MONTHS.map((m, i) => {
-    let U = 0, P = 0, N = 0;
-    for (const e of entries.filter((x) => x.month === m.key)) {
-      const r = calc(dhoran, e.answers);
-      if (!r.cat) continue; // adhuri entry ginti ma nahi
-      if (r.cat === 'U') U++; else if (r.cat === 'P') P++; else N++;
+  const currentClass = CLASSES[dhoran];
+  const rows = MONTHS.map((item, index) => {
+    let emerging = 0;
+    let progressing = 0;
+    let proficient = 0;
+    for (const entry of entries.filter((row) => row.month === item.key)) {
+      const result = calc(dhoran, entry.answers);
+      if (!result.cat) continue;
+      if (result.cat === 'U') emerging += 1;
+      else if (result.cat === 'P') progressing += 1;
+      else proficient += 1;
     }
-    const done = U + P + N;
+    const done = emerging + progressing + proficient;
     return {
-      no: i + 1, month: m.label, register: students.length, U, P, N, done,
-      pct: done && students.length ? Math.round((N / students.length) * 1000) / 10 : '',
+      no: index + 1,
+      month: item.label,
+      register: students.length,
+      emerging,
+      progressing,
+      proficient,
+      done,
+      percentage: done && students.length
+        ? Math.round((proficient / students.length) * 1000) / 10
+        : '',
     };
   });
 
   function download() {
-    const data = rows.map((r) => ({
-      'ક્રમ': r.no, 'માસ': r.month, 'રજીસ્ટર સંખ્યા': r.register,
-      'ઉદયમાન': r.U, 'પ્રગતિશીલ': r.P, 'નિપુણ': r.N, 'FLN સિદ્ધિ %': r.pct,
+    const data = rows.map((row) => ({
+      'ક્રમ': row.no,
+      'માસ': row.month,
+      'રજીસ્ટર સંખ્યા': row.register,
+      'ઉદયમાન': row.emerging,
+      'પ્રગતિશીલ': row.progressing,
+      'નિપુણ': row.proficient,
+      'FLN સિદ્ધિ %': row.percentage,
     }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Tracker');
-    XLSX.writeFile(wb, `FLN_Maths_Tracker_${c.label}.xlsx`);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data), 'Tracker');
+    XLSX.writeFile(workbook, `FLN_Maths_Tracker_${currentClass.label}.xlsx`);
   }
 
-  const monthLabel = MONTHS.find((m) => m.key === month)?.label;
+  const monthLabel = MONTHS.find((item) => item.key === month)?.label;
   const monthEntries = Object.fromEntries(
-    entries.filter((e) => e.month === month).map((e) => [e.studentId, e])
+    entries.filter((entry) => entry.month === month).map((entry) => [entry.student_id, entry])
   );
 
   return (
     <div>
+      {error && <p className="error" role="alert">{error}</p>}
       <div className="row no-print">
         <button className="primary" onClick={() => window.print()}>PDF / પ્રિન્ટ</button>
         <button onClick={download}>Excel</button>
@@ -70,12 +127,12 @@ export default function Summary({ dhoran, month }) {
         </div>
 
         <div className="fields">
-          <div>શાળા: <b>{SCHOOL.name}</b> ({SCHOOL.id})</div>
-          <div>તાલુકો: <b>{SCHOOL.block}</b></div>
-          <div>જિલ્લો: <b>{SCHOOL.district}</b></div>
-          <div>ક્લસ્ટર: <b>{SCHOOL.cluster}</b></div>
-          <label>વર્ગ શિક્ષકનું નામ: <input value={info.teacher || ''} onChange={(e) => upd('teacher', e.target.value)} /></label>
-          <div>ધોરણ: <b>{c.label}</b></div>
+          <div>શાળા: <b>{school.name}</b> ({school.code})</div>
+          <div>તાલુકો: <b>{school.block}</b></div>
+          <div>જિલ્લો: <b>{school.district}</b></div>
+          <div>ક્લસ્ટર: <b>{school.cluster}</b></div>
+          <label>વર્ગ શિક્ષકનું નામ: <input value={info.teacher || ''} onChange={(event) => updateInfo('teacher', event.target.value)} /></label>
+          <div>ધોરણ: <b>{currentClass.label}</b></div>
         </div>
 
         <table className="ledger">
@@ -87,20 +144,18 @@ export default function Summary({ dhoran, month }) {
               <th colSpan="3">FOUNDATIONAL LITERACY AND NUMERACY<br />FLN માં વિદ્યાર્થીઓની સંખ્યા</th>
               <th rowSpan="3">FLN માં સિદ્ધિ મેળવેલ વિદ્યાર્થીઓની ટકાવારી</th>
             </tr>
-            <tr className="sub">
-              <th>ઉદયમાન</th><th>પ્રગતિશીલ</th><th>નિપુણ</th>
-            </tr>
-            <tr className="sub">
-              <th>0 થી 30 %</th><th>31 થી 79 %</th><th>80 % કે તેથી વધુ</th>
-            </tr>
+            <tr className="sub"><th>ઉદયમાન</th><th>પ્રગતિશીલ</th><th>નિપુણ</th></tr>
+            <tr className="sub"><th>0 થી 30 %</th><th>31 થી 79 %</th><th>80 % કે તેથી વધુ</th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.no}>
-                <td>{r.no}</td><td className="left">{r.month}</td>
-                <td>{r.done ? r.register : ''}</td>
-                <td>{r.done ? r.U : ''}</td><td>{r.done ? r.P : ''}</td><td>{r.done ? r.N : ''}</td>
-                <td>{r.pct !== '' ? `${r.pct}%` : ''}</td>
+            {rows.map((row) => (
+              <tr key={row.no}>
+                <td>{row.no}</td><td className="left">{row.month}</td>
+                <td>{row.done ? row.register : ''}</td>
+                <td>{row.done ? row.emerging : ''}</td>
+                <td>{row.done ? row.progressing : ''}</td>
+                <td>{row.done ? row.proficient : ''}</td>
+                <td>{row.percentage !== '' ? `${row.percentage}%` : ''}</td>
               </tr>
             ))}
           </tbody>
@@ -112,12 +167,12 @@ export default function Summary({ dhoran, month }) {
             <tr className="sub"><th>ધોરણ</th><th>કુલ વિધાન</th><th>ઉદયમાન (0 થી 30 %)</th><th>પ્રગતિશીલ (31 થી 79 %)</th><th>નિપુણ (80 % કે તેથી વધુ)</th></tr>
           </thead>
           <tbody>
-            {Object.entries(CLASSES).map(([k, x]) => (
-              <tr key={k} className={k === dhoran ? 'cur' : ''}>
-                <td>{x.label}</td><td>{x.total}</td>
-                <td className="cu">{x.udayMax} કે તેથી ઓછા</td>
-                <td className="cp">{x.udayMax + 1} થી {x.nipunMin - 1}</td>
-                <td className="cn">{x.nipunMin} કે તેથી વધુ</td>
+            {Object.entries(CLASSES).map(([key, item]) => (
+              <tr key={key} className={key === dhoran ? 'cur' : ''}>
+                <td>{item.label}</td><td>{item.total}</td>
+                <td className="cu">{item.udayMax} કે તેથી ઓછા</td>
+                <td className="cp">{item.udayMax + 1} થી {item.nipunMin - 1}</td>
+                <td className="cn">{item.nipunMin} કે તેથી વધુ</td>
               </tr>
             ))}
           </tbody>
@@ -125,17 +180,17 @@ export default function Summary({ dhoran, month }) {
       </div>
 
       <div className="no-print">
-        <h3>{c.label} – {monthLabel}: વિદ્યાર્થી-વાર પરિણામ</h3>
+        <h3>{currentClass.label} – {monthLabel}: વિદ્યાર્થી-વાર પરિણામ</h3>
         <ul className="list">
-          {students.map((s, i) => {
-            const st = calc(dhoran, monthEntries[s.id]?.answers);
+          {students.map((student, index) => {
+            const result = calc(dhoran, monthEntries[student.id]?.answers);
             return (
-              <li key={s.id}>
-                <span>{i + 1}. {s.name}</span>
-                {st.cat ? (
-                  <span className={`badge ${CAT[st.cat].cls}`}>{CAT[st.cat].label} ({st.yes}/{st.total})</span>
+              <li key={student.id}>
+                <span>{index + 1}. {student.name}</span>
+                {result.cat ? (
+                  <span className={`badge ${CAT[result.cat].cls}`}>{CAT[result.cat].label} ({result.yes}/{result.total})</span>
                 ) : (
-                  <span className="badge todo">{st.done ? `${st.done}/${st.total}` : 'બાકી'}</span>
+                  <span className="badge todo">{result.done ? `${result.done}/${result.total}` : 'બાકી'}</span>
                 )}
               </li>
             );

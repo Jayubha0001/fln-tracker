@@ -5,6 +5,7 @@ export function normDhoran(v) {
   let s = String(v ?? '').toLowerCase().trim();
   if (!s) return null;
   if (/બાલ|bal|\bbv\b|\bkg\b|pre|nurs/.test(s)) return 'B';
+  if (s === '103') return 'B';
   s = s.replace(/[૧૨]/g, (c) => ({ '૧': '1', '૨': '2' }[c]));
   const m = s.match(/\d+/);
   if (m) return m[0] === '1' ? '1' : m[0] === '2' ? '2' : null;

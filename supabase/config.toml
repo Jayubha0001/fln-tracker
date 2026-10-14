@@ -1,0 +1,2 @@
+[functions.create-school-account]
+verify_jwt = true
