@@ -124,6 +124,25 @@ Admin-checked PostgreSQL RPC for one atomic import transaction and does not
 delete or reset data. Apply it manually only after confirming the initial
 schema and reviewing the SQL. It is not run automatically by the app.
 
+## FLN entries and reports
+
+Assessment entries are stored in `public.entries`: `school_id` identifies the
+school, `student_id` the student, `dhoran` the grade, `month` the assessment
+period (`YYYY-MM`), and `answers` the statement-number-to-boolean JSON object.
+The existing primary key is `(student_id, month)`, so saving again updates the
+same student's period entry rather than inserting a duplicate. School entry
+access remains restricted by the existing `current_school_id()` RLS policy;
+Admin access uses `is_admin()`.
+
+The Entry grid now keeps edits as an unsaved draft until **એન્ટ્રી સાચવો** is
+clicked. It reports confirmed saved-row counts and individual row errors,
+loads stored answers when a school/grade/month is reopened, and warns before
+leaving with unsaved changes. The Summary tab separates Balvatika, Standard 1,
+and Standard 2, filters by school/grade/month, and exports grade, school,
+student, and skill sheets to Excel. Admins can use **તમામ શાળાઓનો સારાંશ** in
+the Admin Panel to export authorized records across schools. No schema
+migration is required for these changes.
+
 ## Data access and existing offline data
 
 `supabase/migrations/202610130001_initial_schema.sql` creates school, profile,

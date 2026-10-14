@@ -25,6 +25,13 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [workspaceEntryDirty, setWorkspaceEntryDirty] = useState(false);
+
+  function signOutSafely() {
+    if (workspaceEntryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. સાચવ્યા વગર લૉગઆઉટ કરશો?')) return;
+    setWorkspaceEntryDirty(false);
+    onSignOut();
+  }
 
   async function loadSchools() {
     const [{ data: schoolRows, error: schoolError }, { data: profileRows, error: profileError }] =
@@ -224,7 +231,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
             <h1>Admin Panel – FLN Tracker</h1>
             <span className="muted">{profile.email}</span>
           </div>
-          <button onClick={onSignOut}>લૉગઆઉટ</button>
+          <button onClick={signOutSafely}>લૉગઆઉટ</button>
         </div>
       </header>
       <main>
@@ -280,7 +287,12 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
 
         <AdminStudentImport supabase={supabase} schools={schools} schoolsLoaded={schoolsLoaded} />
 
-        <AdminSchoolWorkspace supabase={supabase} schools={schools} />
+        <section className="card">
+          <h3>તમામ શાળાઓનો સારાંશ</h3>
+          <Summary supabase={supabase} schools={schools} isAdmin />
+        </section>
+
+        <AdminSchoolWorkspace supabase={supabase} schools={schools} onEntryDirtyChange={setWorkspaceEntryDirty} />
 
         <form className="card" onSubmit={saveSchool}>
           <h3>{editingId ? 'શાળાની વિગતો બદલો' : 'નવી શાળા ઉમેરો'}</h3>
@@ -351,19 +363,29 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   );
 }
 
-function AdminSchoolWorkspace({ supabase, schools }) {
+function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange }) {
   const [schoolId, setSchoolId] = useState('');
   const [tab, setTab] = useState('students');
   const [dhoran, setDhoran] = useState('1');
   const [month, setMonth] = useState(MONTHS[0].key);
+  const [entryDirty, setEntryDirty] = useState(false);
   const school = schools.find((item) => item.id === schoolId);
+
+  function leaveEntry(next) {
+    if (tab === 'entry' && entryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. સાચવ્યા વગર આગળ વધશો?')) {
+      return;
+    }
+    setEntryDirty(false);
+    onEntryDirtyChange(false);
+    next();
+  }
 
   return (
     <section className="card">
       <h3>શાળા અને વિદ્યાર્થી Management</h3>
       <label>
         શાળા પસંદ કરો
-        <select value={schoolId} onChange={(event) => setSchoolId(event.target.value)}>
+        <select value={schoolId} onChange={(event) => leaveEntry(() => setSchoolId(event.target.value))}>
           <option value="">— શાળા પસંદ કરો —</option>
           {schools.map((item) => (
             <option key={item.id} value={item.id}>
@@ -375,24 +397,33 @@ function AdminSchoolWorkspace({ supabase, schools }) {
       {school && (
         <>
           <div className="row">
-            <select aria-label="ધોરણ" value={dhoran} onChange={(event) => setDhoran(event.target.value)}>
+            <select aria-label="ધોરણ" value={dhoran} onChange={(event) => leaveEntry(() => setDhoran(event.target.value))}>
               {Object.entries(CLASSES).map(([key, item]) => (
                 <option key={key} value={key}>{item.label}</option>
               ))}
             </select>
-            <select aria-label="માસ" value={month} onChange={(event) => setMonth(event.target.value)}>
+            <select aria-label="માસ" value={month} onChange={(event) => leaveEntry(() => setMonth(event.target.value))}>
               {MONTHS.map((item) => (
                 <option key={item.key} value={item.key}>{item.label}</option>
               ))}
             </select>
           </div>
           <nav>
-            <button className={tab === 'students' ? 'on' : ''} onClick={() => setTab('students')}>વિદ્યાર્થી</button>
+            <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>વિદ્યાર્થી</button>
             <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>એન્ટ્રી</button>
-            <button className={tab === 'summary' ? 'on' : ''} onClick={() => setTab('summary')}>રિપોર્ટ</button>
+            <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>રિપોર્ટ</button>
           </nav>
           {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
-          {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} />}
+          {tab === 'entry' && <Entry
+            supabase={supabase}
+            school={school}
+            dhoran={dhoran}
+            month={month}
+            onDirtyChange={(dirty) => {
+              setEntryDirty(dirty);
+              onEntryDirtyChange(dirty);
+            }}
+          />}
           {tab === 'summary' && <Summary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
         </>
       )}

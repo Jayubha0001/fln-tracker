@@ -1,32 +1,56 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CAT, calc } from '../lib/category';
 import { STATEMENTS, STEP, NO_STEP_AREA, LEVEL_LABEL } from '../data/statements';
+import { loadAllRows } from '../lib/loadAllRows';
 
-export default function Entry({ supabase, school, dhoran, month }) {
+export default function Entry({ supabase, school, dhoran, month, onDirtyChange }) {
   const [students, setStudents] = useState(null);
   const [entries, setEntries] = useState(null);
+  const [draft, setDraft] = useState({});
   const [view, setView] = useState('grid');
   const [openId, setOpenId] = useState(null);
   const [error, setError] = useState('');
+  const [savedMessage, setSavedMessage] = useState('');
+  const [rowErrors, setRowErrors] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+
+  const dirty = Object.keys(draft).length > 0;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    const warnBeforeLeave = (event) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeave);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeave);
+  }, [dirty]);
 
   useEffect(() => {
     let mounted = true;
     setStudents(null);
     setEntries(null);
+    setDraft({});
     setError('');
+    setSavedMessage('');
+    setRowErrors([]);
     async function load() {
-      const [{ data: studentRows, error: studentError }, { data: entryRows, error: entryError }] =
-        await Promise.all([
-          supabase.from('students').select('*')
-            .eq('school_id', school.id).eq('dhoran', dhoran).order('name'),
-          supabase.from('entries').select('*')
-            .eq('school_id', school.id).eq('dhoran', dhoran).eq('month', month),
-        ]);
-      if (studentError) throw studentError;
-      if (entryError) throw entryError;
+      const studentQuery = supabase.from('students').select('*')
+        .eq('school_id', school.id).eq('dhoran', dhoran).order('name');
+      const entryQuery = supabase.from('entries').select('*')
+        .eq('school_id', school.id).eq('dhoran', dhoran).eq('month', month);
+      const [studentRows, entryRows] = await Promise.all([
+        loadAllRows(studentQuery),
+        loadAllRows(entryQuery),
+      ]);
       if (mounted) {
-        setStudents(studentRows || []);
-        setEntries(entryRows || []);
+        setStudents(studentRows);
+        setEntries(entryRows);
       }
     }
     load().catch((cause) => {
@@ -35,23 +59,74 @@ export default function Entry({ supabase, school, dhoran, month }) {
     return () => { mounted = false; };
   }, [supabase, school.id, dhoran, month]);
 
-  async function save(student, answers) {
-    const row = {
-      student_id: student.id,
-      school_id: school.id,
-      month,
-      dhoran,
-      answers,
-      updated_at: new Date().toISOString(),
-    };
-    const { error: saveError } = await supabase.from('entries').upsert(row, {
-      onConflict: 'student_id,month',
-    });
-    if (saveError) throw saveError;
-    setEntries((current) => [
-      ...(current || []).filter((entry) => entry.student_id !== student.id),
-      row,
-    ]);
+  function changeAnswers(studentId, answers) {
+    setDraft((current) => ({ ...current, [studentId]: answers }));
+    onDirtyChange?.(true);
+    setSavedMessage('');
+    setRowErrors((current) => current.filter((item) => item.studentId !== studentId));
+  }
+
+  async function saveChanges() {
+    if (savingRef.current || !dirty) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSavedMessage('');
+    setError('');
+    setRowErrors([]);
+    let successfulRows = 0;
+    const failures = [];
+    const savedRows = [];
+    const pending = Object.entries(draft);
+
+    for (const [studentId, answers] of pending) {
+      const student = students.find((item) => item.id === studentId);
+      const row = {
+        student_id: studentId,
+        school_id: school.id,
+        month,
+        dhoran,
+        answers,
+        updated_at: new Date().toISOString(),
+      };
+      let saveError;
+      try {
+        ({ error: saveError } = await supabase.from('entries').upsert(row, {
+          onConflict: 'student_id,month',
+        }));
+      } catch (cause) {
+        saveError = { message: cause.message || 'Supabase request નિષ્ફળ.' };
+      }
+      if (saveError) {
+        failures.push({
+          studentId,
+          label: student?.name || studentId,
+          message: saveError.message,
+        });
+      } else {
+        successfulRows += 1;
+        savedRows.push(row);
+      }
+    }
+
+    if (savedRows.length) {
+      setEntries((current) => {
+        const next = new Map((current || []).map((entry) => [entry.student_id, entry]));
+        savedRows.forEach((row) => next.set(row.student_id, row));
+        return [...next.values()];
+      });
+      setDraft((current) => {
+        const next = { ...current };
+        savedRows.forEach((row) => delete next[row.student_id]);
+        return next;
+      });
+      setSavedMessage(`${successfulRows} વિદ્યાર્થીની એન્ટ્રી Supabaseમાં સાચવાઈ.`);
+    }
+    setRowErrors(failures);
+    if (failures.length) {
+      setError(`${failures.length} વિદ્યાર્થીની એન્ટ્રી સાચવાઈ નથી. નીચેની ભૂલો સુધારીને ફરી સાચવો.`);
+    }
+    savingRef.current = false;
+    setSaving(false);
   }
 
   if (!students || !entries) {
@@ -60,6 +135,10 @@ export default function Entry({ supabase, school, dhoran, month }) {
   if (!students.length) return <p>પહેલા "વિદ્યાર્થી" ટેબમાં વિદ્યાર્થી ઉમેરો.</p>;
 
   const byStudent = Object.fromEntries(entries.map((entry) => [entry.student_id, entry]));
+  const visibleByStudent = Object.fromEntries(entries.map((entry) => [entry.student_id, entry]));
+  Object.entries(draft).forEach(([studentId, answers]) => {
+    visibleByStudent[studentId] = { ...byStudent[studentId], student_id: studentId, answers };
+  });
   const completed = students.filter((student) => calc(dhoran, byStudent[student.id]?.answers).cat).length;
 
   if (view === 'card' && openId !== null) {
@@ -74,12 +153,16 @@ export default function Entry({ supabase, school, dhoran, month }) {
             index={index}
             count={students.length}
             dhoran={dhoran}
-            entry={byStudent[openId]}
-            onSave={(answers) => save(students[index], answers).catch((cause) => setError(`એન્ટ્રી સાચવી શકાઈ નથી: ${cause.message}`))}
+            answers={draft[openId] || byStudent[openId]?.answers || {}}
+            onChange={(answers) => changeAnswers(openId, answers)}
             onPrev={() => index > 0 && setOpenId(students[index - 1].id)}
             onNext={() => (index < students.length - 1 ? setOpenId(students[index + 1].id) : setOpenId(null))}
             onClose={() => setOpenId(null)}
+            saving={saving}
+            onSave={saveChanges}
           />
+          {savedMessage && <p className="success" role="status">{savedMessage}</p>}
+          <RowSaveErrors errors={rowErrors} />
         </div>
       );
     }
@@ -87,9 +170,8 @@ export default function Entry({ supabase, school, dhoran, month }) {
 
   return (
     <div>
-      {error && <p className="error" role="alert">{error}</p>}
       <div className="row between">
-        <span className="muted">પૂર્ણ એન્ટ્રી: {completed} / {students.length}</span>
+        <span className="muted">પૂર્ણ એન્ટ્રી: {completed} / {students.length}{dirty ? ' · સાચવવાના ફેરફાર છે' : ''}</span>
         <div className="seg">
           <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}>ગ્રીડ</button>
           <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>કાર્ડ</button>
@@ -99,9 +181,10 @@ export default function Entry({ supabase, school, dhoran, month }) {
       {view === 'grid' ? (
         <Grid
           students={students}
-          byStudent={byStudent}
+          byStudent={visibleByStudent}
           dhoran={dhoran}
-          onSave={(student, answers) => save(student, answers).catch((cause) => setError(`એન્ટ્રી સાચવી શકાઈ નથી: ${cause.message}`))}
+          onChange={changeAnswers}
+          saving={saving}
         />
       ) : (
         <ul className="list">
@@ -120,7 +203,24 @@ export default function Entry({ supabase, school, dhoran, month }) {
           })}
         </ul>
       )}
+      <section className="entry-save no-print">
+        <button className="primary" disabled={!dirty || saving} onClick={saveChanges}>
+          {saving ? 'સાચવાઈ રહ્યું છે…' : 'એન્ટ્રી સાચવો'}
+        </button>
+        {savedMessage && <p className="success" role="status">{savedMessage}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
+        <RowSaveErrors errors={rowErrors} />
+      </section>
     </div>
+  );
+}
+
+function RowSaveErrors({ errors }) {
+  if (!errors.length) return null;
+  return (
+    <ul className="entry-errors" role="alert">
+      {errors.map((item) => <li key={item.studentId}>{item.label}: {item.message}</li>)}
+    </ul>
   );
 }
 
@@ -135,7 +235,7 @@ function groupBy(list, keyFn) {
   return result;
 }
 
-function Grid({ students, byStudent, dhoran, onSave }) {
+function Grid({ students, byStudent, dhoran, onChange, saving }) {
   const list = STATEMENTS[dhoran];
   const [selected, setSelected] = useState(null);
   const areaGroups = groupBy(list, (statement) => statement.area);
@@ -147,10 +247,10 @@ function Grid({ students, byStudent, dhoran, onSave }) {
     if (value === undefined) answers[number] = true;
     else if (value === true) answers[number] = false;
     else delete answers[number];
-    onSave(student, answers);
+    onChange(student.id, answers);
   };
-  const allYes = (student) => onSave(
-    student,
+  const allYes = (student) => onChange(
+    student.id,
     Object.fromEntries(list.map((statement) => [statement.n, true]))
   );
 
@@ -210,13 +310,13 @@ function Grid({ students, byStudent, dhoran, onSave }) {
                       <td
                         key={statement.n}
                         className={`cell lv-${statement.level} ${value === true ? 'ok' : value === false ? 'bad' : ''}`}
-                        onClick={() => cycle(student, statement.n)}
+                        onClick={() => !saving && cycle(student, statement.n)}
                       >
                         {value === true ? '✓' : value === false ? '✗' : ''}
                       </td>
                     );
                   })}
-                  <td><button className="mini" onClick={() => allYes(student)}>બધા ✓</button></td>
+                  <td><button className="mini" disabled={saving} onClick={() => allYes(student)}>બધા ✓</button></td>
                   <td className="num">{status.yes}/{status.total}</td>
                   <td>
                     {status.cat ? (
@@ -245,14 +345,13 @@ function Grid({ students, byStudent, dhoran, onSave }) {
   );
 }
 
-function StudentForm({ student, index, count, dhoran, entry, onSave, onPrev, onNext, onClose }) {
+function StudentForm({ student, index, count, dhoran, answers, onChange, onPrev, onNext, onClose, saving, onSave }) {
   const list = STATEMENTS[dhoran];
-  const answers = entry?.answers || {};
   const status = calc(dhoran, answers);
 
-  const set = (number, value) => onSave({ ...answers, [number]: value });
-  const allYes = () => onSave(Object.fromEntries(list.map((statement) => [statement.n, true])));
-  const clear = () => onSave({});
+  const set = (number, value) => onChange({ ...answers, [number]: value });
+  const allYes = () => onChange(Object.fromEntries(list.map((statement) => [statement.n, true])));
+  const clear = () => onChange({});
 
   return (
     <div>
@@ -262,8 +361,8 @@ function StudentForm({ student, index, count, dhoran, entry, onSave, onPrev, onN
       </div>
       <h2>{student.name}</h2>
       <div className="row">
-        <button className="primary" onClick={allYes}>બધા હા</button>
-        <button onClick={clear}>બધું સાફ</button>
+        <button className="primary" disabled={saving} onClick={allYes}>બધા હા</button>
+        <button disabled={saving} onClick={clear}>બધું સાફ</button>
       </div>
       <p>
         હા: <b>{status.yes}</b> / {status.total}{' '}
@@ -277,8 +376,8 @@ function StudentForm({ student, index, count, dhoran, entry, onSave, onPrev, onN
             <small className="muted">{statement.area}</small>
             <div>{indexInClass + 1}. {statement.text}</div>
             <div className="yn">
-              <button className={value === true ? 'yes on' : 'yes'} onClick={() => set(statement.n, true)}>હા</button>
-              <button className={value === false ? 'no on' : 'no'} onClick={() => set(statement.n, false)}>ના</button>
+              <button className={value === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(statement.n, true)}>હા</button>
+              <button className={value === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(statement.n, false)}>ના</button>
             </div>
           </div>
         );
@@ -287,6 +386,7 @@ function StudentForm({ student, index, count, dhoran, entry, onSave, onPrev, onN
       <div className="row sticky">
         <button onClick={onPrev} disabled={index === 0}>← પાછળ</button>
         <button className="primary" onClick={onNext}>{index === count - 1 ? 'પૂર્ણ' : 'આગળ →'}</button>
+        <button disabled={!Object.keys(answers).length || saving} onClick={onSave}>{saving ? 'સાચવાય છે…' : 'એન્ટ્રી સાચવો'}</button>
       </div>
     </div>
   );

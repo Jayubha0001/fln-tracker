@@ -179,9 +179,19 @@ export default function App() {
 function SchoolTracker({ supabase, school, onSignOut }) {
   const [tab, setTab] = useState('entry');
   const [dhoran, setDhoran] = useState('1');
+  const [entryDirty, setEntryDirty] = useState(false);
   const [month, setMonth] = useState(
     MONTHS.find((m) => m.key === nowKey)?.key || MONTHS[0].key
   );
+
+  function leaveEntry(next) {
+    if (tab === 'entry' && entryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. સાચવ્યા વગર આગળ વધશો?')) {
+      return false;
+    }
+    setEntryDirty(false);
+    next();
+    return true;
+  }
 
   return (
     <div className="app">
@@ -195,29 +205,29 @@ function SchoolTracker({ supabase, school, onSignOut }) {
               <br /><small>Login ID: {school.code}</small>
             </div>
           </div>
-          <button onClick={onSignOut}>લૉગઆઉટ</button>
+          <button onClick={() => leaveEntry(onSignOut)}>લૉગઆઉટ</button>
         </div>
         <div className="row">
-          <select aria-label="ધોરણ" value={dhoran} onChange={(e) => setDhoran(e.target.value)}>
+          <select aria-label="ધોરણ" value={dhoran} onChange={(e) => leaveEntry(() => setDhoran(e.target.value))}>
             {Object.entries(CLASSES).map(([key, item]) => (
               <option key={key} value={key}>{item.label}</option>
             ))}
           </select>
-          <select aria-label="માસ" value={month} onChange={(e) => setMonth(e.target.value)}>
+          <select aria-label="માસ" value={month} onChange={(e) => leaveEntry(() => setMonth(e.target.value))}>
             {MONTHS.map((item) => (
               <option key={item.key} value={item.key}>{item.label}</option>
             ))}
           </select>
         </div>
         <nav>
-          <button className={tab === 'students' ? 'on' : ''} onClick={() => setTab('students')}>વિદ્યાર્થી</button>
+          <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>વિદ્યાર્થી</button>
           <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>એન્ટ્રી</button>
-          <button className={tab === 'summary' ? 'on' : ''} onClick={() => setTab('summary')}>સારાંશ</button>
+          <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>સારાંશ</button>
         </nav>
       </header>
       <main>
         {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
-        {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} />}
+        {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />}
         {tab === 'summary' && <Summary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
       </main>
     </div>

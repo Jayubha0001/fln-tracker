@@ -1,202 +1,421 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { CLASSES, CAT, MONTHS, calc } from '../lib/category';
+import { STATEMENTS } from '../data/statements';
+import { loadAllRows } from '../lib/loadAllRows';
 
-function loadInfo(schoolId) {
+const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
+const DEFAULT_MONTH = MONTHS.find((item) => item.key === CURRENT_MONTH)?.key || MONTHS[0].key;
+
+function loadTeacher(schoolId) {
   try {
-    return JSON.parse(localStorage.getItem(`fln-school-${schoolId}`)) || {};
+    return JSON.parse(localStorage.getItem(`fln-school-${schoolId}`))?.teacher || '';
   } catch {
-    return {};
+    return '';
   }
 }
 
-export default function Summary({ supabase, school, dhoran, month }) {
+export default function Summary({
+  supabase,
+  school = null,
+  schools = [],
+  dhoran = '1',
+  month = DEFAULT_MONTH,
+  isAdmin = false,
+}) {
   const [students, setStudents] = useState(null);
   const [entries, setEntries] = useState(null);
-  const [info, setInfo] = useState(() => loadInfo(school.id));
+  const [selectedSchoolId, setSelectedSchoolId] = useState(school?.id || (isAdmin ? 'all' : ''));
+  const [selectedGrade, setSelectedGrade] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(month);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setSelectedSchoolId(school?.id || (isAdmin ? 'all' : ''));
+  }, [school?.id, isAdmin]);
+
+  useEffect(() => setSelectedMonth(month), [month]);
 
   useEffect(() => {
     let mounted = true;
     setStudents(null);
     setEntries(null);
     setError('');
-    async function load() {
-      const [{ data: studentRows, error: studentError }, { data: entryRows, error: entryError }] =
-        await Promise.all([
-          supabase.from('students').select('*')
-            .eq('school_id', school.id).eq('dhoran', dhoran).order('name'),
-          supabase.from('entries').select('*')
-            .eq('school_id', school.id).eq('dhoran', dhoran),
-        ]);
-      if (studentError) throw studentError;
-      if (entryError) throw entryError;
-      if (mounted) {
-        setStudents(studentRows || []);
-        setEntries(entryRows || []);
-      }
+    const studentsQuery = supabase.from('students').select('*').order('name');
+    const entriesQuery = supabase.from('entries').select('*');
+    if (!isAdmin && school?.id) {
+      studentsQuery.eq('school_id', school.id);
+      entriesQuery.eq('school_id', school.id);
     }
-    load().catch((cause) => {
-      if (mounted) setError(`સારાંશ લોડ થઈ શક્યો નથી: ${cause.message}`);
-    });
-    return () => { mounted = false; };
-  }, [supabase, school.id, dhoran]);
 
-  useEffect(() => {
-    setInfo(loadInfo(school.id));
-  }, [school.id]);
+    Promise.all([loadAllRows(studentsQuery), loadAllRows(entriesQuery)])
+      .then(([studentRows, entryRows]) => {
+        if (mounted) {
+          setStudents(studentRows);
+          setEntries(entryRows);
+        }
+      })
+      .catch((cause) => {
+        if (mounted) setError(`સારાંશ લોડ થઈ શક્યો નથી: ${cause.message}`);
+      });
+    return () => { mounted = false; };
+  }, [supabase, school?.id, isAdmin]);
+
+  const selectedSchool = schools.find((item) => item.id === selectedSchoolId)
+    || (school?.id === selectedSchoolId ? school : null);
+  const schoolOptions = isAdmin ? schools : school ? [school] : [];
+  const schoolMap = useMemo(() => new Map(schools.map((item) => [item.id, item])), [schools]);
 
   if (!students || !entries) {
     return <p className={error ? 'error' : ''} role={error ? 'alert' : undefined}>{error || 'લોડ થાય છે…'}</p>;
   }
 
-  const updateInfo = (key, value) => {
-    const next = { ...info, [key]: value };
-    setInfo(next);
-    try {
-      localStorage.setItem(`fln-school-${school.id}`, JSON.stringify(next));
-    } catch (cause) {
-      setError(`શિક્ષકની વિગતો આ device પર સાચવી શકાઈ નથી: ${cause.message}`);
-    }
-  };
+  const monthLabel = MONTHS.find((item) => item.key === selectedMonth)?.label || selectedMonth;
 
-  const currentClass = CLASSES[dhoran];
+  function download() {
+    const reportGrades = Object.entries(CLASSES)
+      .filter(([grade]) => selectedGrade === 'all' || grade === selectedGrade);
+    const summaryRows = reportGrades.map(([grade, info]) => {
+      const gradeStudents = (students || []).filter((student) =>
+        (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+        && student.dhoran === grade
+      );
+      const ids = new Set(gradeStudents.map((student) => student.id));
+      const gradeEntries = (entries || []).filter((entry) =>
+        ids.has(entry.student_id) && entry.dhoran === grade && entry.month === selectedMonth
+      );
+      const complete = gradeEntries.filter((entry) => calc(grade, entry.answers).cat).length;
+      const incomplete = gradeEntries.length - complete;
+      return {
+        'ધોરણ': info.label,
+        'માસ': monthLabel,
+        'શાળા પસંદગી': selectedSchoolId === 'all' ? 'બધી શાળાઓ' : selectedSchool?.name || '',
+        'નોંધાયેલા વિદ્યાર્થીઓ': gradeStudents.length,
+        'સાચવેલી એન્ટ્રી': gradeEntries.length,
+        'પૂર્ણ એન્ટ્રી': complete,
+        'અપૂર્ણ એન્ટ્રી': incomplete,
+        'બાકી': Math.max(0, gradeStudents.length - gradeEntries.length),
+      };
+    });
+    const studentRows = reportGrades.flatMap(([grade, info]) => {
+      const gradeStudents = (students || []).filter((student) =>
+        (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+        && student.dhoran === grade
+      );
+      const lookup = new Map((entries || [])
+        .filter((entry) => entry.dhoran === grade && entry.month === selectedMonth)
+        .map((entry) => [entry.student_id, entry]));
+      return gradeStudents.map((student) => {
+        const entry = lookup.get(student.id);
+        const result = calc(grade, entry?.answers);
+        return {
+          'શાળા': schoolMap.get(student.school_id)?.name || school?.name || '',
+          'શાળા કોડ': schoolMap.get(student.school_id)?.code || school?.code || '',
+          'ધોરણ': info.label,
+          'વિદ્યાર્થી': student.name,
+          'માસ': monthLabel,
+          'સાચવેલી એન્ટ્રી': entry ? 'હા' : 'ના',
+          'પૂર્ણ': result.cat ? 'હા' : 'ના',
+          'હા જવાબ': result.yes,
+          'કુલ વિધાન': result.total,
+          'પરિણામ': result.cat ? CAT[result.cat].label : 'બાકી / અપૂર્ણ',
+        };
+      });
+    });
+    const comparisonSchools = selectedSchoolId === 'all'
+      ? schools
+      : schoolOptions.filter((item) => item.id === selectedSchoolId);
+    const schoolComparisonRows = reportGrades.flatMap(([grade, info]) => comparisonSchools.map((item) => {
+      const gradeStudents = (students || []).filter((student) =>
+        student.school_id === item.id && student.dhoran === grade
+      );
+      const ids = new Set(gradeStudents.map((student) => student.id));
+      const gradeEntries = (entries || []).filter((entry) =>
+        ids.has(entry.student_id) && entry.dhoran === grade && entry.month === selectedMonth
+      );
+      const complete = gradeEntries.filter((entry) => calc(grade, entry.answers).cat).length;
+      return {
+        'શાળા': item.name,
+        'શાળા કોડ': item.code,
+        'ધોરણ': info.label,
+        'નોંધાયેલા': gradeStudents.length,
+        'સાચવેલી એન્ટ્રી': gradeEntries.length,
+        'પૂર્ણ': complete,
+        'અપૂર્ણ': gradeEntries.length - complete,
+        'બાકી': Math.max(0, gradeStudents.length - gradeEntries.length),
+      };
+    }));
+    const skillRows = reportGrades.flatMap(([grade, info]) => {
+      const gradeStudents = (students || []).filter((student) =>
+        (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+        && student.dhoran === grade
+      );
+      const ids = new Set(gradeStudents.map((student) => student.id));
+      const gradeEntries = new Map((entries || [])
+        .filter((entry) => ids.has(entry.student_id) && entry.dhoran === grade && entry.month === selectedMonth)
+        .map((entry) => [entry.student_id, entry]));
+      return (STATEMENTS[grade] || []).map((statement, index) => {
+        const values = gradeStudents
+          .map((student) => gradeEntries.get(student.id)?.answers?.[statement.n])
+          .filter((value) => value !== undefined);
+        const yes = values.filter((value) => value === true).length;
+        return {
+          'ધોરણ': info.label,
+          'વિધાન ક્રમ': index + 1,
+          'ક્ષેત્ર': statement.area,
+          'વિધાન': statement.text,
+          'હા': yes,
+          'જવાબ આપેલા': values.length,
+          'હા %': values.length ? Math.round((yes / values.length) * 1000) / 10 : '',
+        };
+      });
+    });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), 'ધોરણ સારાંશ');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(schoolComparisonRows), 'શાળા સરખામણી');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(studentRows), 'વિદ્યાર્થી પરિણામ');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(skillRows), 'વિધાન પ્રમાણે');
+    XLSX.writeFile(workbook, `FLN_Summary_${selectedMonth}.xlsx`);
+  }
+
+  return (
+    <div className="summary-page">
+      <div className="row summary-filters no-print">
+        {isAdmin && (
+          <label>
+            શાળા
+            <select value={selectedSchoolId} onChange={(event) => setSelectedSchoolId(event.target.value)}>
+              <option value="all">બધી શાળાઓ</option>
+              {schoolOptions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}
+            </select>
+          </label>
+        )}
+        <label>
+          ધોરણ
+          <select value={selectedGrade} onChange={(event) => setSelectedGrade(event.target.value)}>
+            <option value="all">બધા ધોરણ</option>
+            {Object.entries(CLASSES).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
+          </select>
+        </label>
+        <label>
+          માસ
+          <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
+            {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+          </select>
+        </label>
+        <button className="primary" onClick={() => window.print()}>PDF / પ્રિન્ટ</button>
+        <button onClick={download}>Excel નિકાસ</button>
+      </div>
+
+      {Object.entries(CLASSES).filter(([grade]) => selectedGrade === 'all' || grade === selectedGrade).map(([grade, info]) => {
+        const gradeStudents = (students || []).filter((student) =>
+          (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+          && student.dhoran === grade
+        );
+        const gradeEntries = (entries || []).filter((entry) =>
+          (selectedSchoolId === 'all' || entry.school_id === selectedSchoolId)
+          && entry.dhoran === grade
+          && entry.month === selectedMonth
+        );
+        const entriesByStudent = new Map(gradeEntries.map((entry) => [entry.student_id, entry]));
+        const results = gradeStudents.map((student) => {
+          const entry = entriesByStudent.get(student.id);
+          return { student, entry, result: calc(grade, entry?.answers) };
+        });
+        const done = results.filter((item) => item.entry && item.result.cat).length;
+        const partial = results.filter((item) => item.entry && !item.result.cat).length;
+        const pending = Math.max(0, gradeStudents.length - gradeEntries.length);
+        const gradeSkills = (STATEMENTS[grade] || []).map((statement, index) => {
+          const values = results.map((item) => item.entry?.answers?.[statement.n]).filter((value) => value !== undefined);
+          const yes = values.filter((value) => value === true).length;
+          return {
+            number: index + 1,
+            area: statement.area,
+            text: statement.text,
+            yes,
+            answered: values.length,
+            percent: values.length ? Math.round((yes / values.length) * 1000) / 10 : null,
+          };
+        });
+        const gradeSchoolTotals = isAdmin && selectedSchoolId === 'all'
+          ? schools.map((item) => {
+            const itemStudents = gradeStudents.filter((student) => student.school_id === item.id);
+            const itemStudentIds = new Set(itemStudents.map((student) => student.id));
+            const itemEntries = gradeEntries.filter((entry) => itemStudentIds.has(entry.student_id));
+            return {
+              school: item,
+              enrolled: itemStudents.length,
+              saved: itemEntries.length,
+              complete: itemEntries.filter((entry) => calc(grade, entry.answers).cat).length,
+              pending: Math.max(0, itemStudents.length - itemEntries.length),
+            };
+          })
+          : [];
+
+        return (
+          <section className="summary-grade card" key={grade}>
+            <h2>{info.label} · {monthLabel}</h2>
+            {selectedSchoolId !== 'all' && selectedSchool && (
+              <p className="muted">{selectedSchool.name} · {selectedSchool.code} · {selectedSchool.block}, {selectedSchool.district}</p>
+            )}
+            {gradeStudents.length === 0 ? (
+              <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી</p>
+            ) : (
+              <>
+                <div className="summary-counts">
+                  <div><span>કુલ નોંધાયેલા</span><b>{gradeStudents.length}</b></div>
+                  <div><span>સાચવેલી એન્ટ્રી</span><b>{gradeEntries.length}</b></div>
+                  <div><span>પૂર્ણ એન્ટ્રી</span><b>{done}</b></div>
+                  <div><span>અપૂર્ણ એન્ટ્રી</span><b>{partial}</b></div>
+                  <div><span>બાકી</span><b>{pending}</b></div>
+                </div>
+
+                {isAdmin && selectedSchoolId === 'all' && (
+                  <>
+                    <h3>શાળા પ્રમાણે સરખામણી</h3>
+                    <div className="scroll">
+                      <table className="report-table">
+                        <thead><tr><th>શાળા</th><th>કોડ</th><th>નોંધાયેલા</th><th>એન્ટ્રી</th><th>પૂર્ણ</th><th>બાકી</th></tr></thead>
+                        <tbody>
+                          {gradeSchoolTotals.map((item) => (
+                            <tr key={item.school.id}>
+                              <td className="left">{item.school.name}</td><td>{item.school.code}</td>
+                              <td>{item.enrolled}</td><td>{item.saved}</td><td>{item.complete}</td><td>{item.pending}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                {gradeEntries.length === 0 ? (
+                  <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી</p>
+                ) : (
+                  <>
+                    <h3>વિધાન / કૌશલ્ય પ્રમાણે પરિણામ</h3>
+                    <div className="scroll">
+                      <table className="report-table">
+                        <thead><tr><th>#</th><th>ક્ષેત્ર</th><th>વિધાન</th><th>હા</th><th>જવાબ આપેલા</th><th>હા %</th></tr></thead>
+                        <tbody>
+                          {gradeSkills.map((item) => (
+                            <tr key={item.number}>
+                              <td>{item.number}</td><td>{item.area}</td><td className="left">{item.text}</td>
+                              <td>{item.yes}</td><td>{item.answered}</td><td>{item.percent === null ? '—' : `${item.percent}%`}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                <h3>વિદ્યાર્થી-વાર પરિણામ</h3>
+                <div className="scroll">
+                  <table className="report-table">
+                    <thead><tr><th>#</th><th>શાળા</th><th>વિદ્યાર્થી</th><th>જવાબ</th><th>કુલ</th><th>પરિણામ</th><th>સ્થિતિ</th></tr></thead>
+                    <tbody>
+                      {results.map(({ student, entry, result }, index) => (
+                        <tr key={student.id}>
+                          <td>{index + 1}</td>
+                          <td>{schoolMap.get(student.school_id)?.name || school?.name || ''}</td>
+                          <td className="left">{student.name}</td><td>{result.yes}</td><td>{result.total}</td>
+                          <td>{result.cat ? CAT[result.cat].label : '—'}</td>
+                          <td>{!entry ? 'બાકી' : result.cat ? 'પૂર્ણ' : 'અપૂર્ણ'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        );
+      })}
+      {selectedSchool && (
+        <SchoolLedger
+          school={selectedSchool}
+          dhoran={selectedGrade === 'all' ? dhoran : selectedGrade}
+          students={students}
+          entries={entries}
+        />
+      )}
+    </div>
+  );
+}
+
+function SchoolLedger({ school, dhoran, students, entries }) {
+  const [teacher, setTeacher] = useState(() => loadTeacher(school.id));
+  const [teacherError, setTeacherError] = useState('');
+  const gradeStudents = students.filter((student) =>
+    student.school_id === school.id && student.dhoran === dhoran
+  );
+  const studentIds = new Set(gradeStudents.map((student) => student.id));
+  const gradeEntries = entries.filter((entry) =>
+    studentIds.has(entry.student_id) && entry.dhoran === dhoran
+  );
   const rows = MONTHS.map((item, index) => {
-    let emerging = 0;
-    let progressing = 0;
-    let proficient = 0;
-    for (const entry of entries.filter((row) => row.month === item.key)) {
+    const categories = { U: 0, P: 0, N: 0 };
+    for (const entry of gradeEntries.filter((row) => row.month === item.key)) {
       const result = calc(dhoran, entry.answers);
-      if (!result.cat) continue;
-      if (result.cat === 'U') emerging += 1;
-      else if (result.cat === 'P') progressing += 1;
-      else proficient += 1;
+      if (result.cat) categories[result.cat] += 1;
     }
-    const done = emerging + progressing + proficient;
+    const done = categories.U + categories.P + categories.N;
     return {
       no: index + 1,
       month: item.label,
-      register: students.length,
-      emerging,
-      progressing,
-      proficient,
+      register: gradeStudents.length,
+      emerging: categories.U,
+      progressing: categories.P,
+      proficient: categories.N,
       done,
-      percentage: done && students.length
-        ? Math.round((proficient / students.length) * 1000) / 10
+      percentage: done && gradeStudents.length
+        ? Math.round((categories.N / gradeStudents.length) * 1000) / 10
         : '',
     };
   });
+  const grade = CLASSES[dhoran];
 
-  function download() {
-    const data = rows.map((row) => ({
-      'ક્રમ': row.no,
-      'માસ': row.month,
-      'રજીસ્ટર સંખ્યા': row.register,
-      'ઉદયમાન': row.emerging,
-      'પ્રગતિશીલ': row.progressing,
-      'નિપુણ': row.proficient,
-      'FLN સિદ્ધિ %': row.percentage,
-    }));
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data), 'Tracker');
-    XLSX.writeFile(workbook, `FLN_Maths_Tracker_${currentClass.label}.xlsx`);
+  function updateTeacher(value) {
+    setTeacher(value);
+    try {
+      const current = JSON.parse(localStorage.getItem(`fln-school-${school.id}`)) || {};
+      localStorage.setItem(`fln-school-${school.id}`, JSON.stringify({ ...current, teacher: value }));
+    } catch (cause) {
+      setTeacherError(`શિક્ષકની વિગતો આ device પર સાચવી શકાઈ નથી: ${cause.message}`);
+    }
   }
 
-  const monthLabel = MONTHS.find((item) => item.key === month)?.label;
-  const monthEntries = Object.fromEntries(
-    entries.filter((entry) => entry.month === month).map((entry) => [entry.student_id, entry])
-  );
-
   return (
-    <div>
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className="row no-print">
-        <button className="primary" onClick={() => window.print()}>PDF / પ્રિન્ટ</button>
-        <button onClick={download}>Excel</button>
+    <section className="sheet summary-ledger">
+      <div className="row between no-print">
+        <h3>શાળાનો માસિક લેજર · {grade.label}</h3>
+        <button onClick={() => window.print()}>PDF / પ્રિન્ટ</button>
       </div>
-      <p className="muted no-print">પ્રિન્ટ વિન્ડોમાં "Save as PDF" પસંદ કરો. શાળા વગેરે વિગત એક વાર ભરો, સેવ થઈ જશે.</p>
-
-      <div className="sheet">
-        <div className="sheet-head">
-          <div className="t1">જીસીઈઆરટી, ગાંધીનગર</div>
-          <div className="t2">NIPUN GUJARAT</div>
-          <div className="t3">FLN ACTION PLAN</div>
-          <div className="t4">વર્ષ : 2026/27</div>
-          <div className="t5">ગણિત ટ્રેકર (લેડર)</div>
-          <div className="t6">બાલવાટિકા થી ધોરણ 2 માટે</div>
-        </div>
-
-        <div className="fields">
-          <div>શાળા: <b>{school.name}</b> ({school.code})</div>
-          <div>તાલુકો: <b>{school.block}</b></div>
-          <div>જિલ્લો: <b>{school.district}</b></div>
-          <div>ક્લસ્ટર: <b>{school.cluster}</b></div>
-          <label>વર્ગ શિક્ષકનું નામ: <input value={info.teacher || ''} onChange={(event) => updateInfo('teacher', event.target.value)} /></label>
-          <div>ધોરણ: <b>{currentClass.label}</b></div>
-        </div>
-
+      <div className="fields">
+        <div>શાળા: <b>{school.name}</b> ({school.code})</div>
+        <div>તાલુકો: <b>{school.block}</b></div>
+        <div>જિલ્લો: <b>{school.district}</b></div>
+        <label>વર્ગ શિક્ષકનું નામ: <input value={teacher} onChange={(event) => updateTeacher(event.target.value)} /></label>
+        <div>ધોરણ: <b>{grade.label}</b></div>
+      </div>
+      {teacherError && <p className="error" role="alert">{teacherError}</p>}
+      <div className="scroll">
         <table className="ledger">
           <thead>
-            <tr>
-              <th rowSpan="3">ક્રમ</th>
-              <th rowSpan="3">માસનું નામ</th>
-              <th rowSpan="3">ધોરણની રજિસ્ટર સંખ્યા</th>
-              <th colSpan="3">FOUNDATIONAL LITERACY AND NUMERACY<br />FLN માં વિદ્યાર્થીઓની સંખ્યા</th>
-              <th rowSpan="3">FLN માં સિદ્ધિ મેળવેલ વિદ્યાર્થીઓની ટકાવારી</th>
-            </tr>
-            <tr className="sub"><th>ઉદયમાન</th><th>પ્રગતિશીલ</th><th>નિપુણ</th></tr>
-            <tr className="sub"><th>0 થી 30 %</th><th>31 થી 79 %</th><th>80 % કે તેથી વધુ</th></tr>
+            <tr><th>ક્રમ</th><th>માસનું નામ</th><th>રજીસ્ટર</th><th>ઉદયમાન</th><th>પ્રગતિશીલ</th><th>નિપુણ</th><th>FLN સિદ્ધિ %</th></tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.no}>
-                <td>{row.no}</td><td className="left">{row.month}</td>
-                <td>{row.done ? row.register : ''}</td>
-                <td>{row.done ? row.emerging : ''}</td>
-                <td>{row.done ? row.progressing : ''}</td>
-                <td>{row.done ? row.proficient : ''}</td>
-                <td>{row.percentage !== '' ? `${row.percentage}%` : ''}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <table className="ledger thr">
-          <thead>
-            <tr><th colSpan="5">સિધ્ધ કરેલા વિધાનોની સંખ્યા</th></tr>
-            <tr className="sub"><th>ધોરણ</th><th>કુલ વિધાન</th><th>ઉદયમાન (0 થી 30 %)</th><th>પ્રગતિશીલ (31 થી 79 %)</th><th>નિપુણ (80 % કે તેથી વધુ)</th></tr>
-          </thead>
-          <tbody>
-            {Object.entries(CLASSES).map(([key, item]) => (
-              <tr key={key} className={key === dhoran ? 'cur' : ''}>
-                <td>{item.label}</td><td>{item.total}</td>
-                <td className="cu">{item.udayMax} કે તેથી ઓછા</td>
-                <td className="cp">{item.udayMax + 1} થી {item.nipunMin - 1}</td>
-                <td className="cn">{item.nipunMin} કે તેથી વધુ</td>
+                <td>{row.no}</td><td className="left">{row.month}</td><td>{row.done ? row.register : ''}</td>
+                <td>{row.done ? row.emerging : ''}</td><td>{row.done ? row.progressing : ''}</td>
+                <td>{row.done ? row.proficient : ''}</td><td>{row.percentage === '' ? '' : `${row.percentage}%`}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-
-      <div className="no-print">
-        <h3>{currentClass.label} – {monthLabel}: વિદ્યાર્થી-વાર પરિણામ</h3>
-        <ul className="list">
-          {students.map((student, index) => {
-            const result = calc(dhoran, monthEntries[student.id]?.answers);
-            return (
-              <li key={student.id}>
-                <span>{index + 1}. {student.name}</span>
-                {result.cat ? (
-                  <span className={`badge ${CAT[result.cat].cls}`}>{CAT[result.cat].label} ({result.yes}/{result.total})</span>
-                ) : (
-                  <span className="badge todo">{result.done ? `${result.done}/${result.total}` : 'બાકી'}</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
+    </section>
   );
 }
