@@ -1,10 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  accountStatus,
+  accountListError,
   isActiveAdmin,
+  isSupportedAccountType,
   resetCanRevealCredential,
   resetFailureReason,
-  scopedAccountKey,
   validScopedTarget,
 } from '../_shared/scopedAccountManagement.js';
 
@@ -13,20 +13,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-api-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const PAGE_SIZE = 1000;
-const AUTH_LOOKUP_CONCURRENCY = 20;
-
 type Role = 'district' | 'block';
-type Profile = {
-  id: string;
-  email: string;
-  role: Role;
-  active: boolean;
-  school_id: string | null;
-  district_code: string | null;
-  block_code: string | null;
-  must_change_password: boolean;
-};
 
 function response(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -51,144 +38,87 @@ function temporaryPassword() {
   return characters.join('');
 }
 
-async function loadRows(query: any) {
-  const rows: any[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if (!data || data.length < PAGE_SIZE) return rows;
+async function listAccounts(
+  admin: ReturnType<typeof createClient>,
+  projectRef: string,
+  payload: { accountType?: unknown; filters?: unknown; page?: unknown; pageSize?: unknown },
+) {
+  const accountType = payload.accountType;
+  const filters = payload.filters && typeof payload.filters === 'object' && !Array.isArray(payload.filters)
+    ? payload.filters as Record<string, unknown>
+    : {};
+  const page = Number.isInteger(payload.page) ? Number(payload.page) : 1;
+  const pageSize = Number.isInteger(payload.pageSize) ? Number(payload.pageSize) : 50;
+  const statuses = ['', 'active', 'missing', 'inactive', 'password_change_required', 'needs_attention'];
+  if (!isSupportedAccountType(accountType)
+    || page < 1 || pageSize < 1 || pageSize > 100
+    || (filters.status !== undefined && !statuses.includes(String(filters.status)))) {
+    throw new Error('Account type, filters અથવા page માન્ય નથી.');
   }
-}
-
-function addName(map: Map<string, Set<string>>, code: string, name: string | null) {
-  if (!name?.trim()) return;
-  const names = map.get(code) || new Set<string>();
-  names.add(name.trim());
-  map.set(code, names);
-}
-
-function namesFor(map: Map<string, Set<string>>, code: string) {
-  return [...(map.get(code) || [])].sort((left, right) => left.localeCompare(right)).join(', ');
-}
-
-async function listAccounts(admin: ReturnType<typeof createClient>, projectRef: string) {
-  const schoolRows = await loadRows(admin.from('schools')
-    .select('code,district,block,active')
-    .order('code'));
-  const districtNames = new Map<string, Set<string>>();
-  const blockNames = new Map<string, Set<string>>();
-  const districtCodes = new Set<string>();
-  const blockCodes = new Set<string>();
-  for (const school of schoolRows) {
-    if (!/^\d{11}$/.test(school.code)) continue;
-    const districtCode = school.code.slice(0, 4);
-    const blockCode = school.code.slice(0, 6);
-    districtCodes.add(districtCode);
-    blockCodes.add(blockCode);
-    addName(districtNames, districtCode, school.district);
-    addName(blockNames, blockCode, school.block);
+  const filterValue = (name: string) => {
+    const value = filters[name];
+    if (value === undefined || value === '') return '';
+    if (typeof value !== 'string' || value.length > 100) throw new Error(`${name} filter માન્ય નથી.`);
+    return value.trim();
+  };
+  const { data, error } = await admin.rpc('admin_login_targets', {
+    p_account_type: accountType,
+    p_district: filterValue('district'),
+    p_block: filterValue('block'),
+    p_school: filterValue('school'),
+    p_status: filterValue('status'),
+    p_page: page,
+    p_page_size: pageSize,
+  });
+  if (error) {
+    console.error('Central login target query failed:', error.message);
+    throw error;
   }
-
-  const profiles = await loadRows(admin.from('profiles')
-    .select('id,email,role,active,school_id,district_code,block_code,must_change_password')
-    .in('role', ['district', 'block'])
-    .order('role').order('district_code').order('block_code'));
-
-  for (const profile of profiles as Profile[]) {
-    if (profile.role === 'district' && /^\d{4}$/.test(profile.district_code || '')) {
-      districtCodes.add(profile.district_code as string);
-    } else if (profile.role === 'block'
-      && /^\d{6}$/.test(profile.block_code || '')
-      && profile.block_code?.slice(0, 4) === profile.district_code) {
-      blockCodes.add(profile.block_code);
-      districtCodes.add(profile.district_code as string);
-    }
+  if (!Array.isArray(data)) {
+    throw new Error('Central login target RPC returned a non-array response.');
   }
 
-  const authByProfileId = new Map<string, { user: any; lookupFailed: boolean }>();
-  const scopedProfiles = profiles as Profile[];
-  for (let offset = 0; offset < scopedProfiles.length; offset += AUTH_LOOKUP_CONCURRENCY) {
-    const batch = scopedProfiles.slice(offset, offset + AUTH_LOOKUP_CONCURRENCY);
-    const results = await Promise.all(batch.map(async (profile) => {
-      const { data, error } = await admin.auth.admin.getUserById(profile.id);
-      return {
-        id: profile.id,
-        user: data.user || null,
-        lookupFailed: Boolean(error),
-      };
-    }));
-    for (const result of results) {
-      authByProfileId.set(result.id, { user: result.user, lookupFailed: result.lookupFailed });
-    }
-  }
-
-  const profileByKey = new Map<string, Profile[]>();
-  for (const profile of scopedProfiles) {
-    const key = profile.role === 'district'
-      ? scopedAccountKey('district', profile.district_code, null)
-      : scopedAccountKey('block', profile.district_code, profile.block_code);
-    profileByKey.set(key, [...(profileByKey.get(key) || []), profile]);
-  }
   const projectHost = `${projectRef}.supabase.co`;
-  const districtAccounts = [...districtCodes].sort().map((code) => {
-    const matches = profileByKey.get(scopedAccountKey('district', code, null)) || [];
-    const profile = matches.length === 1 ? matches[0] : null;
-    const auth = profile ? authByProfileId.get(profile.id) : null;
-    const expectedEmail = `district-${code}@${projectHost}`;
-    const identityConsistent = !profile || (
-      profile.role === 'district'
-      && profile.school_id === null
-      && profile.district_code === code
-      && profile.block_code === null
-      && auth?.user?.email?.toLowerCase() === profile.email.toLowerCase()
-      && profile.email.toLowerCase() === expectedEmail.toLowerCase()
-    );
+  const rows = await Promise.all(data.map(async (row: any) => {
+    let authUser = null;
+    let lookupFailed = false;
+    if (row.profile_id) {
+      const { data: authData, error: authError } = await admin.auth.admin.getUserById(row.profile_id);
+      authUser = authData?.user || null;
+      lookupFailed = Boolean(authError);
+    }
+    const expectedEmail = `${row.account_type}-${row.login_id}@${projectHost}`.toLowerCase();
+    const identityConsistent = !row.profile_id
+      || (!lookupFailed && authUser?.id === row.profile_id
+        && authUser.email?.toLowerCase() === row.email?.toLowerCase()
+        && row.email?.toLowerCase() === expectedEmail);
+    const status = lookupFailed || (row.profile_id && !identityConsistent)
+      ? 'needs_attention'
+      : row.account_status;
     return {
-      districtCode: code,
-      districtName: namesFor(districtNames, code),
-      loginId: code,
-      accountStatus: matches.length > 1
-        ? 'needs_attention'
-        : !identityConsistent
-          ? 'needs_attention'
-          : accountStatus(profile, auth?.user, auth?.lookupFailed || false),
-      lastUpdated: auth?.user?.updated_at || null,
-      mustChangePassword: profile?.must_change_password || false,
+      accountType: row.account_type,
+      districtName: row.district_name || '',
+      districtCode: row.district_code || '',
+      blockName: row.block_name || '',
+      blockCode: row.block_code || '',
+      schoolName: row.school_name || '',
+      schoolId: row.school_id || '',
+      loginId: row.login_id,
+      email: row.email || expectedEmail,
+      profileId: row.profile_id,
+      accountStatus: status,
+      lastUpdated: authUser?.updated_at || null,
+      mustChangePassword: row.must_change_password === true,
       identityConsistent,
+      active: row.target_active === true,
     };
-  });
-  const blockAccounts = [...blockCodes].sort().map((code) => {
-    const districtCode = code.slice(0, 4);
-    const matches = profileByKey.get(scopedAccountKey('block', districtCode, code)) || [];
-    const profile = matches.length === 1 ? matches[0] : null;
-    const auth = profile ? authByProfileId.get(profile.id) : null;
-    const expectedEmail = `block-${code}@${projectHost}`;
-    const identityConsistent = !profile || (
-      profile.role === 'block'
-      && profile.school_id === null
-      && profile.district_code === districtCode
-      && profile.block_code === code
-      && auth?.user?.email?.toLowerCase() === profile.email.toLowerCase()
-      && profile.email.toLowerCase() === expectedEmail.toLowerCase()
-    );
-    return {
-      districtCode,
-      districtName: namesFor(districtNames, districtCode),
-      blockCode: code,
-      blockName: namesFor(blockNames, code),
-      loginId: code,
-      accountStatus: matches.length > 1
-        ? 'needs_attention'
-        : !identityConsistent
-          ? 'needs_attention'
-          : accountStatus(profile, auth?.user, auth?.lookupFailed || false),
-      lastUpdated: auth?.user?.updated_at || null,
-      mustChangePassword: profile?.must_change_password || false,
-      identityConsistent,
-    };
-  });
-  return { districts: districtAccounts, blocks: blockAccounts };
+  }));
+  return {
+    accounts: rows,
+    total: Number(data[0]?.total_count || 0),
+    page,
+    pageSize,
+  };
 }
 
 Deno.serve(async (request) => {
@@ -224,7 +154,15 @@ Deno.serve(async (request) => {
     return response(503, { error: 'District/Block migration 202610140002_scoped_district_block_accounts.sql લાગુ નથી અથવા schema cache જૂનો છે.' });
   }
 
-  let payload: { action?: unknown; role?: unknown; code?: unknown };
+  let payload: {
+    action?: unknown;
+    role?: unknown;
+    code?: unknown;
+    accountType?: unknown;
+    filters?: unknown;
+    page?: unknown;
+    pageSize?: unknown;
+  };
   try {
     payload = await request.json();
   } catch {
@@ -234,11 +172,14 @@ Deno.serve(async (request) => {
   if (payload.action === 'list') {
     try {
       const projectRef = new URL(url).hostname.split('.')[0];
-      return response(200, await listAccounts(admin, projectRef));
+      return response(200, await listAccounts(admin, projectRef, payload));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'અજાણી server ભૂલ.';
-      console.error('Scoped account listing failed:', message);
-      return response(500, { error: `District/Block accounts લોડ થઈ શક્યા નથી: ${message}` });
+      const databaseError = cause && typeof cause === 'object'
+        ? cause as { code?: unknown; message?: unknown }
+        : { message: cause instanceof Error ? cause.message : 'અજાણી server ભૂલ.' };
+      const diagnosis = accountListError(databaseError);
+      console.error('Scoped account listing failed:', diagnosis.databaseCode, diagnosis.databaseMessage);
+      return response(diagnosis.status, diagnosis);
     }
   }
 
@@ -253,7 +194,19 @@ Deno.serve(async (request) => {
   const { error: auditSchemaError } = await admin.from('scoped_password_reset_audit').select('id').limit(0);
   if (auditSchemaError) {
     console.error('Scoped password reset audit schema is unavailable:', auditSchemaError.message);
-    return response(503, { error: 'scoped_password_reset_audit migration લાગુ નથી અથવા schema cache જૂનો છે; કોઈ password reset કરાયો નથી.' });
+    const missingTable = ['PGRST205', '42P01'].includes(auditSchemaError.code || '');
+    return response(503, {
+      error: missingTable
+        ? `scoped_password_reset_audit table API schemaમાં મળતી નથી (${auditSchemaError.code}). આ project પર supabase/migrations/202610140005_scoped_password_reset_audit.sql apply કરો; table હાજર હોય તો NOTIFY pgrst, 'reload schema'; ચલાવો.`
+        : `scoped_password_reset_audit ચકાસણી નિષ્ફળ (${auditSchemaError.code || 'unknown'}): ${auditSchemaError.message}. કોઈ password reset કરાયો નથી.`,
+    });
+  }
+  const { error: centralAuditSchemaError } = await admin.from('admin_account_audit').select('id').limit(0);
+  if (centralAuditSchemaError) {
+    console.error('Central account audit schema is unavailable:', centralAuditSchemaError.message);
+    return response(503, {
+      error: `admin_account_audit table ઉપલબ્ધ નથી (${centralAuditSchemaError.code || 'unknown'}). 202610150001_central_login_management.sql યોગ્ય Supabase project પર apply કરો અને જરૂરી હોય તો PostgREST schema cache reload કરો; કોઈ password reset કરાયો નથી.`,
+    });
   }
 
   async function audit(profileId: string | null, result: 'success' | 'failed', detailCode: string) {
@@ -261,6 +214,18 @@ Deno.serve(async (request) => {
       profile_id: profileId,
       actor_id: actorId,
       role: targetRole,
+      district_code: districtCode,
+      block_code: blockCode,
+      result,
+      detail_code: detailCode,
+    });
+    if (error) throw error;
+  }
+  async function auditCentral(profileId: string | null, result: 'success' | 'failed', detailCode: string) {
+    const { error } = await admin.from('admin_account_audit').insert({
+      actor_id: actorId,
+      account_type: targetRole,
+      target_profile_id: profileId,
       district_code: districtCode,
       block_code: blockCode,
       result,
@@ -277,11 +242,18 @@ Deno.serve(async (request) => {
   const { data: profile, error: profileError } = await profileQuery.maybeSingle();
   if (profileError) {
     console.error('Unable to locate scoped password reset target:', profileError.message);
+    try {
+      await audit(null, 'failed', 'profile_lookup_failed');
+      await auditCentral(null, 'failed', 'profile_lookup_failed');
+    } catch (cause) {
+      console.error('Unable to audit scoped profile lookup failure:', cause);
+    }
     return response(500, { error: 'District/Block account ચકાસી શકાયું નથી.' });
   }
   if (!profile) {
     try {
       await audit(null, 'failed', 'profile_missing');
+      await auditCentral(null, 'failed', 'profile_missing');
     } catch (cause) {
       console.error('Unable to audit missing scoped account reset:', cause);
     }
@@ -298,6 +270,7 @@ Deno.serve(async (request) => {
   if (failure) {
     try {
       await audit(profile.id, 'failed', failure);
+      await auditCentral(profile.id, 'failed', failure);
     } catch (cause) {
       console.error('Unable to audit scoped account reset validation failure:', cause);
     }
@@ -308,10 +281,26 @@ Deno.serve(async (request) => {
   }
 
   const password = temporaryPassword();
-  const { error: passwordError } = await admin.auth.admin.updateUserById(profile.id, { password });
+  let passwordError;
+  try {
+    ({ error: passwordError } = await admin.auth.admin.updateUserById(profile.id, { password }));
+  } catch (cause) {
+    console.error('Scoped Auth reset outcome is unknown:', cause);
+    try {
+      await audit(profile.id, 'failed', 'auth_reset_outcome_unknown');
+      await auditCentral(profile.id, 'failed', 'auth_reset_outcome_unknown');
+    } catch (auditError) {
+      console.error('Unable to audit unknown scoped reset outcome:', auditError);
+    }
+    return response(502, {
+      error: 'Auth reset requestનો response મળ્યો નથી; password બદલાયો હોઈ શકે છે. ફરી reset ન કરો; Auth, profile અને audit સ્થિતિ verify કરો.',
+      outcomeUnknown: true,
+    });
+  }
   if (passwordError) {
     try {
       await audit(profile.id, 'failed', 'auth_password_update_failed');
+      await auditCentral(profile.id, 'failed', 'auth_password_update_failed');
     } catch (cause) {
       console.error('Unable to audit scoped password update failure:', cause);
     }
@@ -334,6 +323,7 @@ Deno.serve(async (request) => {
     console.error('Scoped Auth password reset applied but first-login flag was not confirmed:', markError?.message || 'No profile updated.');
     try {
       await audit(profile.id, 'failed', 'password_change_flag_failed');
+      await auditCentral(profile.id, 'failed', 'password_change_flag_failed');
     } catch (cause) {
       console.error('Unable to audit scoped password flag failure:', cause);
     }
@@ -344,6 +334,7 @@ Deno.serve(async (request) => {
   }
   try {
     await audit(profile.id, 'success', 'reset_complete');
+    await auditCentral(profile.id, 'success', 'reset_complete');
   } catch (cause) {
     console.error('Scoped password reset succeeded but audit insert failed:', cause);
     return response(500, {

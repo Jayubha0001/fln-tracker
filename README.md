@@ -192,8 +192,10 @@ migrations in order in **Supabase Dashboard → SQL Editor**: first
 `202610140003_school_import_cluster_id.sql`, then
 `202610140004_admin_report_assessment_date_compat.sql` if needed, then
 `202610140005_scoped_password_reset_audit.sql` for District/Block account
-management. Do not blindly replay the
-initial schema migration. The second migration assumes School Code's first 4
+management, and `202610150001_central_login_management.sql` for the unified
+District/Block/School login manager, server-side account pagination, and
+password-free create/reset audit. Do not blindly replay the initial schema
+migration. The second migration assumes School Code's first 4
 digits are District Code and first 6 digits are Block Code. It preserves
 existing Admin/School profiles, adds scoped read/write RLS for active schools,
 and requires a one-time password change for new regional accounts. Confirm the
@@ -207,6 +209,7 @@ supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv
 supabase functions deploy admin-school-password-reset --project-ref nutnaymoiazrhhwgqlyv
 supabase functions deploy admin-scoped-account-management --project-ref nutnaymoiazrhhwgqlyv
 supabase functions deploy create-scoped-account --project-ref nutnaymoiazrhhwgqlyv
+supabase functions deploy create-school-account --project-ref nutnaymoiazrhhwgqlyv
 supabase functions deploy admin-import-schools --project-ref nutnaymoiazrhhwgqlyv
 supabase functions list --project-ref nutnaymoiazrhhwgqlyv
 ```
@@ -233,7 +236,12 @@ flag, and audit insertion all succeed. It does not reset credentials while
 loading the management list.
 
 The Admin Panel has a per-school **વાર્ષિક શાળા FLN Report** Excel button and a
-District/Block account form. Login IDs are taken from school codes: District
+central **Login & Password Management** section with District, Block, and
+School tabs, server-filtered 50-row pages, account creation/reset, and Copy
+Login ID. Download Credentials CSV is enabled only after the server confirms a
+successful create/reset; its in-memory credentials are not stored in database
+tables or browser storage. Existing Auth passwords cannot be retrieved.
+Login IDs are taken from school codes: District
 uses four digits (for example `2428`) and Block uses six (`242801`). Those
 users can edit student and entry data within their RLS-scoped active schools,
 but cannot manage schools, profiles, or accounts. The `admin-reports` function
@@ -241,6 +249,28 @@ returns a specific database error; if it reports missing
 `public.entries.assessment_date`, apply migration 001 above. Test one regional
 account per level and confirm users cannot see/edit a school with another
 prefix before issuing more logins.
+
+If scoped password reset returns HTTP 503 mentioning
+`scoped_password_reset_audit`, the reset is intentionally stopped before changing
+the password. Check that the dashboard is connected to the correct Supabase
+project, apply `202610140005_scoped_password_reset_audit.sql` there, and if the
+table exists but the function still reports it missing, run
+`NOTIFY pgrst, 'reload schema';` in that project's SQL Editor. Do not retry the
+reset until the schema is available.
+
+The current central login manager also needs
+`202610150001_central_login_management.sql`; it adds `admin_account_audit` and
+the service-role-only `admin_login_targets` RPC. The RPC returns filtered,
+paginated targets; it does not change schools, student entries, existing
+profiles, or RLS policies. The create/reset Edge Functions refuse to return a
+temporary credential unless the mandatory password-change flag and audit
+requirements are confirmed.
+
+The District/Block dashboard displays the signed-in account's district and
+block names and limits school reports to its active RLS-scoped schools. The
+report's **બાકી વિદ્યાર્થીઓ – Excel Download** exports the pending student
+list for the selected save-date range, grade, and assessment-month filters;
+pending means no matching entry exists for those filters.
 
 ### Importing schools
 

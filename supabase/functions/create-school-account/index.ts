@@ -15,7 +15,7 @@ type ProvisionedAccount = {
 type AccountOutcome = {
   schoolCode: string;
   schoolName: string;
-  status: 'created' | 'already_exists' | 'failed';
+  status: 'created' | 'already_exists' | 'failed' | 'unknown';
   reason?: string;
 };
 
@@ -134,6 +134,13 @@ async function handleRequest(request: Request) {
   if (schoolIds.length > 100 || new Set(schoolIds).size !== schoolIds.length) {
     return response(400, { error: 'schoolIds batch 1થી 100 unique IDsનું હોવું જોઈએ.' });
   }
+  const { error: auditSchemaError } = await adminClient.from('admin_account_audit').select('id').limit(0);
+  if (auditSchemaError) {
+    console.error('Central account audit schema is unavailable:', auditSchemaError.message);
+    return response(503, {
+      error: 'admin_account_audit migration 202610150001_central_login_management.sql યોગ્ય Supabase project પર લાગુ નથી અથવા API schema cache જૂનો છે. કોઈ account create કરાયો નથી.',
+    });
+  }
 
   const { data: schools, error: schoolsError } = await adminClient
     .from('schools')
@@ -172,6 +179,25 @@ async function handleRequest(request: Request) {
   } catch {
     return response(500, { error: 'Supabase project URL માન્ય નથી.' });
   }
+  async function audit(
+    school: { id: string; code: string },
+    profileId: string | null,
+    result: 'success' | 'failed',
+    detailCode: string,
+  ) {
+    const schoolCode = String(school.code).trim();
+    const { error } = await adminClient.from('admin_account_audit').insert({
+      actor_id: authData.user.id,
+      account_type: 'school',
+      target_profile_id: profileId,
+      district_code: /^\d{11}$/.test(schoolCode) ? schoolCode.slice(0, 4) : null,
+      block_code: /^\d{11}$/.test(schoolCode) ? schoolCode.slice(0, 6) : null,
+      school_id: school.id,
+      result,
+      detail_code: detailCode,
+    });
+    if (error) throw error;
+  }
   const validTargets = targets.filter((school) => /^\d{11}$/.test(String(school.code).trim()));
   let authUsers: AuthUserIndex = { byId: new Map(), byEmail: new Map() };
   if (validTargets.length) {
@@ -192,6 +218,7 @@ async function handleRequest(request: Request) {
   for (const school of targets) {
     const schoolCode = String(school.code).trim();
     if (!/^\d{11}$/.test(schoolCode)) {
+      await audit(school, null, 'failed', 'invalid_school_code');
       outcomes.push({
         schoolCode: school.code,
         schoolName: school.name,
@@ -207,12 +234,14 @@ async function handleRequest(request: Request) {
     if (profile) {
       const profileAuthUser = authUsers.byId.get(profile.id);
       if (profileAuthUser?.email === email && authUser?.id === profile.id) {
+        await audit(school, profile.id, 'failed', 'profile_already_exists');
         outcomes.push({
           schoolCode: school.code,
           schoolName: school.name,
           status: 'already_exists',
         });
       } else {
+        await audit(school, profile.id, 'failed', 'auth_profile_mismatch');
         outcomes.push({
           schoolCode: school.code,
           schoolName: school.name,
@@ -225,6 +254,7 @@ async function handleRequest(request: Request) {
 
     const authUserProfile = authUser ? profilesByAuthId.get(authUser.id) : null;
     if (authUser) {
+      await audit(school, null, 'failed', 'auth_user_conflict');
       outcomes.push({
         schoolCode: school.code,
         schoolName: school.name,
@@ -281,9 +311,10 @@ async function handleRequest(request: Request) {
       outcomes.push({
         schoolCode: school.code,
         schoolName: school.name,
-        status: 'failed',
-        reason: 'Auth server સાથે request નિષ્ફળ થઈ; Supabase Auth logs તપાસો.',
+        status: 'unknown',
+        reason: 'Auth create requestનો response મળ્યો નથી. ફરી પ્રયાસ કરતાં પહેલાં Auth અને profilesમાં account સ્થિતિ verify કરો.',
       });
+      await audit(school, null, 'failed', 'auth_create_outcome_unknown');
       continue;
     }
 
@@ -309,6 +340,7 @@ async function handleRequest(request: Request) {
         status: 'failed',
         reason: 'Auth user બની ગયો, પરંતુ profile સાચવી શકાયી નથી. User delete કરાયો નથી; Supabase Admin દ્વારા profile reconcile કરો.',
       });
+      await audit(school, null, 'failed', 'profile_insert_failed');
       continue;
     }
 
@@ -317,6 +349,18 @@ async function handleRequest(request: Request) {
       schoolName: school.name,
       password,
     };
+    try {
+      await audit(school, createdUserId, 'success', 'account_created');
+    } catch (cause) {
+      console.error(`Central account audit failed after creating school ${school.code}:`, cause);
+      outcomes.push({
+        schoolCode: school.code,
+        schoolName: school.name,
+        status: 'unknown',
+        reason: 'Auth અને profile account બન્યા હોઈ શકે, પણ audit પુષ્ટિ નથી. Password દર્શાવ્યો નથી; ફરી પ્રયાસ પહેલાં સ્થિતિ તપાસો.',
+      });
+      continue;
+    }
     created.push(provisioned);
     outcomes.push({
       schoolCode: school.code,

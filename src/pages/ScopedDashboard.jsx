@@ -65,9 +65,10 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   }
 
   const isDistrict = profile.role === 'district';
+  const scopedSchool = schools[0];
   const scopeLabel = isDistrict
-    ? `જિલ્લો ${profile.district_code}`
-    : `બ્લોક ${profile.block_code}`;
+    ? `જિલ્લો ${scopedSchool?.district || profile.district_code} (${profile.district_code})`
+    : `જિલ્લો ${scopedSchool?.district || profile.district_code} (${profile.district_code}) · બ્લોક ${scopedSchool?.block || profile.block_code} (${profile.block_code})`;
 
   return (
     <div className="app">

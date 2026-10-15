@@ -7,6 +7,24 @@ export function isActiveAdmin(profile) {
   return profile?.role === 'admin' && profile.active === true;
 }
 
+export function isSupportedAccountType(accountType) {
+  return accountType === 'district' || accountType === 'block' || accountType === 'school';
+}
+
+export function accountListError(error) {
+  const code = typeof error?.code === 'string' ? error.code : '';
+  const message = typeof error?.message === 'string' ? error.message : 'Unknown database error';
+  const schemaError = ['PGRST202', 'PGRST203', 'PGRST205', '42P01', '42883'].includes(code);
+  return {
+    status: schemaError ? 503 : 500,
+    error: schemaError
+      ? `Central login list database object is missing or unavailable (${code || 'unknown'}). Apply migration 202610150001_central_login_management.sql after verifying its prerequisites, then reload the PostgREST schema cache.`
+      : `Central login list database query failed (${code || 'unknown'}).`,
+    databaseCode: code || null,
+    databaseMessage: message,
+  };
+}
+
 export function scopedAccountKey(role, districtCode, blockCode) {
   return role === 'district'
     ? `district:${districtCode}`

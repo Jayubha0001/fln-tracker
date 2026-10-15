@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  accountListError,
   accountStatus,
   isActiveAdmin,
   matchingScopedProfiles,
@@ -9,6 +10,24 @@ import {
   scopedAccountKey,
   validScopedTarget,
 } from '../supabase/functions/_shared/scopedAccountManagement.js';
+
+test('reports missing login-list RPC/schema objects with actionable HTTP 503 diagnostics', () => {
+  const result = accountListError({
+    code: 'PGRST202',
+    message: 'Could not find the function public.admin_login_targets in the schema cache',
+  });
+  assert.equal(result.status, 503);
+  assert.equal(result.databaseCode, 'PGRST202');
+  assert.match(result.error, /202610150001_central_login_management\.sql/);
+  assert.match(result.databaseMessage, /admin_login_targets/);
+});
+
+test('preserves actual database query errors for login-list diagnostics', () => {
+  const result = accountListError({ code: '42501', message: 'permission denied for function' });
+  assert.equal(result.status, 500);
+  assert.equal(result.databaseCode, '42501');
+  assert.match(result.databaseMessage, /permission denied for function/);
+});
 
 test('validates district and block targets and binds them to their scope', () => {
   assert.equal(validScopedTarget('district', '2428'), true);

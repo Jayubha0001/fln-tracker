@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as XLSX from 'npm:@e965/xlsx@0.20.3';
-import { buildReportMetrics } from '../_shared/reportMetrics.js';
+import { buildPendingStudents, buildReportMetrics } from '../_shared/reportMetrics.js';
 import { GRADE_RULES } from '../_shared/assessmentRules.js';
 import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
 
@@ -148,14 +148,20 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
   });
 
   const enrollmentBySchoolGrade = new Map<string, number>();
+  const enrolledStudents: { id: string; name: string; school_id: string; dhoran: string }[] = [];
   const allSchools = (schools as School[]);
   for (let offset = 0; offset < allSchools.length; offset += 200) {
     const batch = allSchools.slice(offset, offset + 200);
     const ids = batch.map((item) => item.id);
-    const studentQuery = client.from('students').select('school_id,dhoran').in('school_id', ids);
+    const studentQuery = client.from('students').select('id,name,school_id,dhoran').in('school_id', ids);
     if (filters.dhoran) studentQuery.eq('dhoran', filters.dhoran);
-    const students = await loadRows(studentQuery, PAGE_SIZE);
+    const students = await loadRows(
+      studentQuery,
+      PAGE_SIZE,
+      MAX_REPORT_ROWS - enrolledStudents.length,
+    );
     for (const student of students) {
+      enrolledStudents.push(student);
       const key = `${student.school_id}:${student.dhoran}`;
       enrollmentBySchoolGrade.set(key, (enrollmentBySchoolGrade.get(key) || 0) + 1);
     }
@@ -167,9 +173,16 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
     entries,
     filters.dhoran ? [filters.dhoran] : GRADES,
   );
+  const pendingStudents = buildPendingStudents(
+    allSchools,
+    enrolledStudents,
+    entries,
+    filters.dhoran ? [filters.dhoran] : GRADES,
+  );
 
   return {
     entries,
+    pendingStudents,
     ...metrics,
   };
 }
@@ -331,6 +344,27 @@ function makeWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: 
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
 }
 
+function makePendingWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: Filters) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.pendingStudents.map((student) => ({
+    'School Code': student.schoolCode,
+    'School Name': student.schoolName,
+    District: student.district,
+    Block: student.block,
+    'Student Name': student.studentName,
+    'Student UUID': student.studentId,
+    Grade: student.dhoran,
+  }))), 'Pending students');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+    { Metric: 'Pending students', Value: report.pendingStudents.length },
+    { Metric: 'Saved-at date range', Value: `${filters.startDate} to ${filters.endDate}` },
+    { Metric: 'Grade filter', Value: filters.dhoran || 'All' },
+    { Metric: 'Assessment month filter', Value: filters.month || 'All' },
+    { Metric: 'Pending definition', Value: 'Enrolled students without an entry matching the selected date range, grade and assessment month.' },
+  ]), 'Filters');
+  return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return jsonResponse(405, { error: 'માત્ર POST વિનંતી માન્ય છે.' });
@@ -392,7 +426,17 @@ Deno.serve(async (request) => {
     const filters = validateFilters(body.filters);
     if (typeof filters === 'string') return jsonResponse(400, { error: filters });
     const report = await buildReport(userClient, filters);
-    if (body.action === 'export') {
+    if (body.action === 'export' || body.action === 'pending-export') {
+      if (body.action === 'pending-export') {
+        return new Response(makePendingWorkbook(report, filters), {
+          headers: {
+            ...corsHeaders,
+            'Cache-Control': 'no-store',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename="fln-pending-${filters.startDate}-${filters.endDate}.xlsx"`,
+          },
+        });
+      }
       const workbook = makeWorkbook(report, filters);
       return new Response(workbook, {
         headers: {

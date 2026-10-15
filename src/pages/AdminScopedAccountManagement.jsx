@@ -1,27 +1,56 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { buildCredentialsCsv, confirmedCredential, mergeCredentials } from '../lib/accountCredentials.js';
 
-const FUNCTION_NAME = 'admin-scoped-account-management';
+const ACCOUNT_TYPES = [
+  ['district', 'District Logins'],
+  ['block', 'Block Logins'],
+  ['school', 'School Logins'],
+];
+const PAGE_SIZE = 50;
+const EMPTY_FILTERS = { district: '', block: '', school: '', status: '' };
 
 async function functionError(error) {
   if (error?.context instanceof Response) {
     const text = await error.context.clone().text();
+    let detail = text || error.message;
     try {
       const body = JSON.parse(text);
-      return `HTTP ${error.context.status}: ${body.error || body.message || text}`;
+      const databaseDetail = [body.databaseCode, body.databaseMessage].filter(Boolean).join(': ');
+      detail = [body.error || body.message || detail, databaseDetail].filter(Boolean).join(' Database: ');
     } catch {
-      return `HTTP ${error.context.status}: ${text || error.message}`;
+      // Keep the response text when the function did not return JSON.
     }
+    return `HTTP ${error.context.status}: ${detail}`;
+  }
+  if (error?.name === 'FunctionsFetchError') {
+    return `${error.message} Edge Function સુધી network request પહોંચી નથી; function deployment અને network તપાસો. સ્થિતિ અસ્પષ્ટ હોઈ શકે છે.`;
   }
   return error?.message || 'Edge Function સુધી request પહોંચી નથી.';
 }
 
-function statusLabel(account) {
-  if (account.identityConsistent === false) return 'ધ્યાન જરૂરી · Auth/profile mismatch';
-  if (account.accountStatus === 'missing') return 'Login નથી';
-  if (account.accountStatus === 'needs_attention') return 'ધ્યાન જરૂરી · Auth/profile તપાસો';
-  if (account.accountStatus === 'inactive') return 'નિષ્ક્રિય';
-  if (account.accountStatus === 'password_change_required') return 'Password બદલવો બાકી';
-  return 'સક્રિય';
+function invalidListResponse(data) {
+  if (data && typeof data === 'object' && !Array.isArray(data) && (data.error || data.message)) {
+    const databaseDetail = [data.databaseCode, data.databaseMessage].filter(Boolean).join(': ');
+    return `HTTP 200: ${[data.error || data.message, databaseDetail].filter(Boolean).join(' Database: ')}`;
+  }
+  const shape = data === null
+    ? 'null'
+    : Array.isArray(data)
+      ? 'array'
+      : typeof data === 'object'
+        ? `object with keys ${Object.keys(data).join(', ') || '(none)'}`
+        : `${typeof data}: ${String(data).slice(0, 300)}`;
+  return `HTTP 200: Login list response shape mismatch (${shape}). Expected { accounts: [], total: non-negative integer, page, pageSize }. Check the deployed Edge Function response.`;
+}
+
+function statusLabel(status) {
+  return {
+    active: 'Active',
+    missing: 'Missing',
+    inactive: 'Inactive',
+    password_change_required: 'Password Change Required',
+    needs_attention: 'ધ્યાન જરૂરી · Auth/profile mismatch',
+  }[status] || 'અજ્ઞાત';
 }
 
 function lastUpdated(value) {
@@ -31,247 +60,305 @@ function lastUpdated(value) {
 }
 
 export default function AdminScopedAccountManagement({ supabase }) {
-  const [tab, setTab] = useState('district');
-  const [districts, setDistricts] = useState([]);
-  const [blocks, setBlocks] = useState([]);
-  const [search, setSearch] = useState('');
-  const [districtFilter, setDistrictFilter] = useState('');
-  const [blockFilter, setBlockFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [credential, setCredential] = useState(null);
-  const [copied, setCopied] = useState(false);
-  const [busyCode, setBusyCode] = useState('');
+  const [accountType, setAccountType] = useState('district');
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
+  const [accounts, setAccounts] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [selected, setSelected] = useState({});
+  const [credentials, setCredentials] = useState([]);
+  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  async function loadAccounts(preserveError = false) {
+  const loadAccounts = useCallback(async () => {
     setLoading(true);
-    if (!preserveError) setError('');
+    setError('');
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke(FUNCTION_NAME, {
-        body: { action: 'list' },
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
+        body: {
+          action: 'list',
+          accountType,
+          filters: appliedFilters,
+          page,
+          pageSize: PAGE_SIZE,
+        },
       });
       if (invokeError) throw new Error(await functionError(invokeError));
-      if (!Array.isArray(data?.districts) || !Array.isArray(data?.blocks)) {
-        throw new Error('Functionનું account-list response માન્ય નથી.');
+      if (!Array.isArray(data?.accounts) || !Number.isSafeInteger(data?.total) || data.total < 0) {
+        throw new Error(invalidListResponse(data));
       }
-      setDistricts(data.districts);
-      setBlocks(data.blocks);
+      setAccounts(data.accounts);
+      setTotal(data.total);
     } catch (cause) {
-      const loadError = `District/Block accounts લોડ ન થઈ શક્યા: ${cause.message}`;
-      setError((current) => preserveError && current ? `${current} ${loadError}` : loadError);
+      setError(`Login યાદી લોડ ન થઈ: ${cause.message}`);
     } finally {
       setLoading(false);
     }
-  }
+  }, [supabase, accountType, appliedFilters, page]);
 
   useEffect(() => {
     loadAccounts();
-  }, [supabase]);
+  }, [loadAccounts]);
 
-  const visibleDistricts = useMemo(() => {
-    const term = search.trim().toLocaleLowerCase();
-    return districts.filter((account) => !term
-      || [account.districtName, account.districtCode, account.loginId]
-        .some((value) => String(value || '').toLocaleLowerCase().includes(term)));
-  }, [districts, search]);
+  useEffect(() => {
+    setSelected({});
+  }, [accountType, page, appliedFilters]);
 
-  const visibleBlocks = useMemo(() => blocks.filter((account) => (
-    (!districtFilter || account.districtCode === districtFilter)
-    && (!blockFilter || account.blockCode === blockFilter)
-    && (!statusFilter || account.accountStatus === statusFilter)
-  )), [blocks, districtFilter, blockFilter, statusFilter]);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const selectedMissing = useMemo(() => accounts.filter((account) =>
+    selected[`${account.accountType}:${account.loginId}`]
+      && account.accountStatus === 'missing'
+      && (account.accountType !== 'school' || account.active)), [accounts, selected]);
+  const missingOnPage = accounts.filter((account) =>
+    account.accountStatus === 'missing' && (account.accountType !== 'school' || account.active));
 
-  const blockOptions = useMemo(() => blocks.filter((account) => (
-    !districtFilter || account.districtCode === districtFilter
-  )), [blocks, districtFilter]);
+  function applyFilters(event) {
+    event.preventDefault();
+    setPage(1);
+    setAppliedFilters({ ...filters });
+  }
 
-  async function createAccount(account, role) {
-    const code = role === 'district' ? account.districtCode : account.blockCode;
-    const scopeName = role === 'district'
-      ? `${account.districtName} · ${code}`
-      : `${account.districtName} › ${account.blockName} · ${code}`;
-    if (!window.confirm(`${scopeName} માટે નવું ${role === 'district' ? 'District' : 'Block'} login બનાવવું?`)) return;
-    setBusyCode(`${role}:${code}`);
+  function credentialFrom(account, data, action) {
+    const result = confirmedCredential(account, data, action);
+    if (!result) {
+      throw new Error(data?.resetApplied
+        ? 'Password બદલાયો હોઈ શકે છે, પરંતુ credential સાથેનો સફળ response મળ્યો નથી. ફરી reset ન કરો; Auth/profile/audit સ્થિતિ ચકાસો.'
+        : 'Serverએ creation/reset અને ફરજિયાત password-changeની પુષ્ટિ આપી નથી. Credential જાહેર કરાયો નથી.');
+    }
+    return result;
+  }
+
+  async function createAccounts(targets) {
+    if (!targets.length || busy) return;
+    if (!window.confirm(`${targets.length} પસંદ કરેલા missing account માટે Login બનાવવા?`)) return;
+    setBusy(true);
     setError('');
     setMessage('');
-    setCredential(null);
-    setCopied(false);
+    const generated = [];
+    let uncertain = '';
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('create-scoped-account', {
-        body: { role, code },
-      });
-      if (invokeError) throw new Error(await functionError(invokeError));
-      if (!data?.temporaryPassword || data.role !== role || data.loginId !== code || data.mustChangePassword !== true) {
-        if (data?.exists || data?.code === 'AUTH_USER_EXISTS_OR_CONFLICT') {
-          throw new Error('Auth user અથવા profile પહેલેથી હોઈ શકે છે. આ status અસ્પષ્ટ છે; Auth Users અને profiles ચકાસી reconcile કર્યા વગર ફરી પ્રયાસ ન કરો.');
+      const schools = targets.filter((account) => account.accountType === 'school');
+      if (schools.length) {
+        const { data, error: invokeError } = await supabase.functions.invoke('create-school-account', {
+          body: { schoolIds: schools.map((account) => account.schoolId) },
+        });
+        if (invokeError) throw new Error(await functionError(invokeError));
+        if (!Array.isArray(data?.outcomes) || !Array.isArray(data?.created)) {
+          throw new Error('School account outcome response અમાન્ય છે. Requestની સ્થિતિ અસ્પષ્ટ છે; ફરી પ્રયાસ ન કરો, પહેલા Auth અને profile તપાસો.');
         }
-        throw new Error(data?.error || 'સફળ account creation અને first-login password changeની પુષ્ટિ મળી નથી.');
+        for (const account of schools) {
+          const outcome = data.outcomes.find((item) => item.schoolCode === account.loginId);
+          const provisioned = data.created.find((item) => item.schoolCode === account.loginId);
+          if (outcome?.status !== 'created' || !provisioned?.password) continue;
+          generated.push(credentialFrom(account, {
+            loginId: account.loginId,
+            schoolCode: account.loginId,
+            temporaryPassword: provisioned.password,
+            mustChangePassword: true,
+          }, 'create'));
+        }
+        if (data.outcomes.some((item) => item.status === 'unknown')) {
+          uncertain = 'એક અથવા વધુ School Loginની સ્થિતિ અસ્પષ્ટ છે; ફરી પ્રયાસ કરતાં પહેલાં Auth અને profiles તપાસો.';
+        } else if (data.outcomes.some((item) => item.status === 'already_exists')) {
+          setMessage('પસંદ કરેલા એક અથવા વધુ Login પહેલેથી હાજર છે; ફરી create ન કરાયા. યાદી ફરી તપાસો.');
+        }
+        const failures = data.outcomes.filter((item) => item.status === 'failed');
+        if (failures.length) setError(failures.map((item) => `${item.schoolCode}: ${item.reason}`).join('; '));
       }
-      setCredential({ role, code, password: data.temporaryPassword, scopeName });
-      setMessage(`${scopeName} માટે login બન્યું. Temporary password ફક્ત આ વખતના સત્રમાં દેખાશે.`);
+      for (const account of targets.filter((item) => item.accountType !== 'school')) {
+        try {
+          const { data, error: invokeError } = await supabase.functions.invoke('create-scoped-account', {
+            body: { role: account.accountType, code: account.loginId },
+          });
+          if (invokeError) throw new Error(await functionError(invokeError));
+          generated.push(credentialFrom(account, data, 'create'));
+        } catch (cause) {
+          uncertain = `${account.accountType} ${account.loginId}: ${cause.message} સ્થિતિ verify કર્યા વગર ફરી પ્રયાસ ન કરો.`;
+          break;
+        }
+      }
+      if (generated.length) {
+        setCredentials((current) => mergeCredentials(current, generated));
+        setMessage(`${generated.length} નવા Login server દ્વારા confirm થયા. Credentials CSV તાત્કાલિક download કરો.`);
+      }
+      if (uncertain) setError((current) => [current, uncertain].filter(Boolean).join(' '));
       await loadAccounts();
     } catch (cause) {
-      setError(`${scopeName} login બનાવવામાં નિષ્ફળ/અસ્પષ્ટ: ${cause.message}`);
-      await loadAccounts(true);
+      setError((current) => [current, cause.message].filter(Boolean).join(' '));
+      setMessage(generated.length
+        ? `${generated.length} સફળ credentials ઉપલબ્ધ છે; બાકીની requestની સ્થિતિ અસ્પષ્ટ છે.`
+        : '');
+      if (generated.length) setCredentials((current) => mergeCredentials(current, generated));
+      await loadAccounts();
     } finally {
-      setBusyCode('');
+      setBusy(false);
     }
   }
 
-  async function resetPassword(account, role) {
-    const code = role === 'district' ? account.districtCode : account.blockCode;
-    const scopeName = role === 'district'
-      ? `${account.districtName} · ${code}`
-      : `${account.districtName} › ${account.blockName} · ${code}`;
-    if (account.accountStatus === 'missing') {
-      setError(`${scopeName}: account profile મળ્યું નથી. Resetથી નવું account બનતું નથી; Create Login પસંદ કરો.`);
+  async function resetPassword(account) {
+    if (!['active', 'password_change_required'].includes(account.accountStatus) || !account.identityConsistent) {
+      setError('Account status અથવા Auth/profile consistency reset માટે યોગ્ય નથી. પહેલા Auth અને profiles તપાસો.');
       return;
     }
-    if (account.accountStatus === 'needs_attention' || account.identityConsistent === false) {
-      setError(`${scopeName}: Auth user/profile consistencyમાં સમસ્યા છે. Password reset પહેલાં Supabase Auth અને profiles તપાસો.`);
-      return;
-    }
-    if (!window.confirm(`${scopeName}નું temporary password reset કરવું? હાલનો password તરત અમાન્ય થશે.`)) return;
-    setBusyCode(`${role}:${code}`);
+    if (!window.confirm(`${account.loginId}નું password reset કરવું? હાલનો password તરત અમાન્ય થશે.`)) return;
+    setBusy(true);
     setError('');
     setMessage('');
-    setCredential(null);
-    setCopied(false);
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke(FUNCTION_NAME, {
-        body: { action: 'reset-password', role, code },
-      });
-      if (invokeError) throw new Error(await functionError(invokeError));
-      if (!data?.temporaryPassword || data.role !== role || data.loginId !== code || data.mustChangePassword !== true) {
-        throw new Error(data?.resetApplied
-          ? 'Password reset લાગુ થયું હોઈ શકે, પરંતુ one-time credentialની પુષ્ટિ નથી. ફરી reset ન કરો; Auth/profile/audit સ્થિતિ તપાસો.'
-          : data?.error || 'Password resetની પુષ્ટિ મળતી નથી.');
+      let data;
+      let invokeError;
+      if (account.accountType === 'school') {
+        ({ data, error: invokeError } = await supabase.functions.invoke('admin-school-password-reset', {
+          body: { schoolId: account.schoolId },
+        }));
+      } else {
+        ({ data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
+          body: { action: 'reset-password', role: account.accountType, code: account.loginId },
+        }));
       }
-      setCredential({ role, code, password: data.temporaryPassword, scopeName });
-      setMessage(`${scopeName}નું password reset સફળ. નવું password એક જ વખત દેખાડવામાં આવે છે.`);
+      if (invokeError) throw new Error(await functionError(invokeError));
+      const credential = credentialFrom(account, data, 'reset');
+      setCredentials((current) => mergeCredentials(current, [credential]));
+      setMessage(`${account.loginId} reset સફળ થયો. નવી credential CSV તાત્કાલિક download કરો.`);
       await loadAccounts();
     } catch (cause) {
-      setError(`${scopeName} password reset નિષ્ફળ/અસ્પષ્ટ: ${cause.message} ફરી પ્રયાસ કરતાં પહેલાં Auth અને profiles તપાસો.`);
-      await loadAccounts(true);
+      setError(`${cause.message} Unknown outcome હોય તો reset ફરી ન કરો; પહેલા Auth, profile અને audit સ્થિતિ તપાસો.`);
+      await loadAccounts();
     } finally {
-      setBusyCode('');
+      setBusy(false);
     }
   }
 
-  async function copyCredential() {
+  async function copyLoginId(loginId) {
     try {
-      await navigator.clipboard.writeText(credential.password);
-      setCopied(true);
-      setMessage('Temporary password clipboardમાં copy થયું. તેને સુરક્ષિત રીતે આપો.');
+      await navigator.clipboard.writeText(loginId);
+      setMessage(`Login ID ${loginId} copy થયો.`);
     } catch (cause) {
-      setError(`Copy થઈ શક્યું નથી: ${cause.message}. Password પસંદ કરીને manually copy કરો.`);
+      setError(`Login ID copy ન થઈ શક્યો: ${cause.message}`);
     }
+  }
+
+  function downloadCredentials() {
+    const blob = new Blob([`\uFEFF${buildCredentialsCsv(credentials)}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'fln-new-login-credentials.csv';
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return (
     <section className="card scoped-account-management">
-      <h3>District અને Block Login Management</h3>
+      <h2>Login &amp; Password Management</h2>
       <p className="muted">
-        Account status Auth user અને profile સરખાવીને બતાવાય છે. Temporary password database કે browser storageમાં સાચવાતો નથી.
-        Reset થયેલો password આગળના login પર બદલવો ફરજિયાત છે.
+        District, Block અને School loginsની server-filtered યાદી. Password માત્ર સફળ create/reset પછી આ સત્રમાં મળે છે; હાલના passwords વાંચી શકાતા નથી.
       </p>
       {error && <p className="error" role="alert">{error}</p>}
       {message && <p className="success" role="status">{message}</p>}
-      {credential && (
-        <div className="card credential-result" aria-live="polite">
-          <b>{credential.scopeName} · Login ID: {credential.code}</b>
-          <p className="error">આ temporary password માત્ર આ વખતના સત્રમાં દેખાશે. સુરક્ષિત રીતે સંબંધિત વિસ્તારના અધિકારીને આપો.</p>
-          <code>{credential.password}</code>
-          <button type="button" onClick={copyCredential}>{copied ? 'Copied' : 'Copy'}</button>
-          <button type="button" onClick={() => { setCredential(null); setCopied(false); }}>Password છુપાવો</button>
+      {credentials.length > 0 && (
+        <div className="credential-result" role="status">
+          <p className="error">આ CSVમાં ફક્ત આ સત્રમાં હમણાં સફળતાપૂર્વક બનાવેલા/reset કરેલા passwords છે. તેને સુરક્ષિત રાખો; આ browser storageમાં સાચવાયું નથી.</p>
+          <button type="button" className="primary" onClick={downloadCredentials}>Download Credentials CSV ({credentials.length})</button>
         </div>
       )}
-      <nav className="scoped-account-tabs" aria-label="District અને Block accounts">
-        <button className={tab === 'district' ? 'on' : ''} onClick={() => setTab('district')}>District Logins ({districts.length})</button>
-        <button className={tab === 'block' ? 'on' : ''} onClick={() => setTab('block')}>Block Logins ({blocks.length})</button>
+      <nav className="scoped-account-tabs" aria-label="Account type">
+        {ACCOUNT_TYPES.map(([value, label]) => (
+          <button
+            type="button"
+            key={value}
+            className={accountType === value ? 'on' : ''}
+            onClick={() => { setPage(1); setAccountType(value); }}
+          >{label}</button>
+        ))}
       </nav>
-      {tab === 'district' && (
-        <>
-          <label className="scoped-search">District Name / Code / Login ID શોધો
-            <input value={search} onChange={(event) => setSearch(event.target.value)} />
+      <form className="scoped-account-filters" onSubmit={applyFilters}>
+        <label>District name / code
+          <input value={filters.district} onChange={(event) => setFilters((current) => ({ ...current, district: event.target.value }))} />
+        </label>
+        {accountType !== 'district' && (
+          <label>Block name / code
+            <input value={filters.block} onChange={(event) => setFilters((current) => ({ ...current, block: event.target.value }))} />
           </label>
-          <div className="scroll scoped-account-table">
-            <table className="report-table">
-              <thead><tr><th>District Name</th><th>District Code</th><th>Login ID</th><th>Account Status</th><th>Last Updated</th><th>Actions</th></tr></thead>
-              <tbody>
-                {visibleDistricts.map((account) => (
-                  <tr key={account.districtCode}>
-                    <td>{account.districtName || '—'}</td><td>{account.districtCode}</td><td>{account.loginId}</td>
-                    <td>{statusLabel(account)}{account.mustChangePassword ? ' · ફરજિયાત password change' : ''}</td>
-                    <td>{lastUpdated(account.lastUpdated)}</td>
-                    <td className="scoped-account-actions">
-                      {account.accountStatus === 'missing'
-                        ? <button disabled={Boolean(busyCode)} onClick={() => createAccount(account, 'district')}>Create Login</button>
-                        : <button disabled={Boolean(busyCode) || account.identityConsistent === false || !['active', 'password_change_required'].includes(account.accountStatus)} onClick={() => resetPassword(account, 'district')}>Reset Password</button>}
-                      {busyCode === `district:${account.districtCode}` && <span role="status">કામ ચાલુ…</span>}
-                    </td>
-                  </tr>
-                ))}
-                {!loading && visibleDistricts.length === 0 && <tr><td colSpan="6">શોધ માટે કોઈ District મળ્યો નથી.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </>
+        )}
+        {accountType === 'school' && (
+          <label>School name / School ID
+            <input value={filters.school} onChange={(event) => setFilters((current) => ({ ...current, school: event.target.value }))} />
+          </label>
+        )}
+        <label>Account status
+          <select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
+            <option value="">બધી સ્થિતિ</option>
+            <option value="active">Active</option>
+            <option value="missing">Missing</option>
+            <option value="inactive">Inactive</option>
+            <option value="password_change_required">Password Change Required</option>
+            <option value="needs_attention">Auth/profile mismatch</option>
+          </select>
+        </label>
+        <button className="primary" disabled={busy}>ફિલ્ટર લાગુ કરો</button>
+      </form>
+      {missingOnPage.length > 0 && (
+        <div className="row">
+          <button type="button" onClick={() => setSelected(Object.fromEntries(missingOnPage.map((account) => [
+            `${account.accountType}:${account.loginId}`, true,
+          ])))}>આ પાનાના બધા Missing પસંદ કરો</button>
+          <button type="button" disabled={busy || !selectedMissing.length} onClick={() => createAccounts(selectedMissing)}>
+            {busy ? 'કામ ચાલુ…' : `પસંદ કરેલા ${selectedMissing.length} Login બનાવો`}
+          </button>
+        </div>
       )}
-      {tab === 'block' && (
-        <>
-          <div className="scoped-account-filters">
-            <label>District
-              <select value={districtFilter} onChange={(event) => { setDistrictFilter(event.target.value); setBlockFilter(''); }}>
-                <option value="">બધા District</option>
-                {districts.map((account) => <option key={account.districtCode} value={account.districtCode}>{account.districtName || account.districtCode} · {account.districtCode}</option>)}
-              </select>
-            </label>
-            <label>Block
-              <select value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)}>
-                <option value="">બધા Block</option>
-                {blockOptions.map((account) => <option key={account.blockCode} value={account.blockCode}>{account.blockName || account.blockCode} · {account.blockCode}</option>)}
-              </select>
-            </label>
-            <label>Account Status
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="">બધી સ્થિતિ</option>
-                <option value="active">સક્રિય</option>
-                <option value="password_change_required">Password બદલવો બાકી</option>
-                <option value="inactive">નિષ્ક્રિય</option>
-                <option value="needs_attention">ધ્યાન જરૂરી</option>
-                <option value="missing">Login નથી</option>
-              </select>
-            </label>
-          </div>
-          <div className="scroll scoped-account-table">
-            <table className="report-table">
-              <thead><tr><th>District Name</th><th>Block Name</th><th>District Code</th><th>Block Code</th><th>Login ID</th><th>Account Status</th><th>Last Updated</th><th>Actions</th></tr></thead>
-              <tbody>
-                {visibleBlocks.map((account) => (
-                  <tr key={account.blockCode}>
-                    <td>{account.districtName || '—'}</td><td>{account.blockName || '—'}</td>
-                    <td>{account.districtCode}</td><td>{account.blockCode}</td><td>{account.loginId}</td>
-                    <td>{statusLabel(account)}{account.mustChangePassword ? ' · ફરજિયાત password change' : ''}</td>
-                    <td>{lastUpdated(account.lastUpdated)}</td>
-                    <td className="scoped-account-actions">
-                      {account.accountStatus === 'missing'
-                        ? <button disabled={Boolean(busyCode)} onClick={() => createAccount(account, 'block')}>Create Login</button>
-                        : <button disabled={Boolean(busyCode) || account.identityConsistent === false || !['active', 'password_change_required'].includes(account.accountStatus)} onClick={() => resetPassword(account, 'block')}>Reset Password</button>}
-                      {busyCode === `block:${account.blockCode}` && <span role="status">કામ ચાલુ…</span>}
-                    </td>
-                  </tr>
-                ))}
-                {!loading && visibleBlocks.length === 0 && <tr><td colSpan="8">ફિલ્ટર માટે કોઈ Block મળ્યો નથી.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-      {loading && <p role="status">District/Block accounts લોડ થઈ રહ્યા છે…</p>}
-      {!loading && <button type="button" onClick={loadAccounts}>યાદી ફરી લોડ કરો</button>}
+      <div className="scroll scoped-account-table">
+        <table className="report-table">
+          <thead><tr>
+            <th>પસંદ કરો</th><th>Account Type</th><th>District / Code</th><th>Block / Code</th>
+            <th>School / ID</th><th>Login ID / Email</th><th>Status</th><th>Last Updated</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            {accounts.map((account) => {
+              const key = `${account.accountType}:${account.loginId}`;
+              const createAllowed = account.accountStatus === 'missing'
+                && (account.accountType !== 'school' || account.active);
+              const resetAllowed = ['active', 'password_change_required'].includes(account.accountStatus)
+                && account.identityConsistent;
+              return (
+                <tr key={key}>
+                  <td><input
+                    type="checkbox"
+                    aria-label={`${account.loginId} પસંદ કરો`}
+                    disabled={!createAllowed || busy}
+                    checked={Boolean(selected[key])}
+                    onChange={(event) => setSelected((current) => ({ ...current, [key]: event.target.checked }))}
+                  /></td>
+                  <td>{account.accountType}</td>
+                  <td>{account.districtName || '—'} · {account.districtCode || '—'}</td>
+                  <td>{account.blockName ? `${account.blockName} · ${account.blockCode}` : '—'}</td>
+                  <td>{account.schoolName ? `${account.schoolName} · ${account.loginId}` : '—'}</td>
+                  <td>{account.loginId}<br /><small>{account.email}</small></td>
+                  <td>{statusLabel(account.accountStatus)}</td>
+                  <td>{lastUpdated(account.lastUpdated)}</td>
+                  <td className="scoped-account-actions">
+                    {createAllowed
+                      ? <button type="button" disabled={busy} onClick={() => createAccounts([account])}>Create Login</button>
+                      : <button type="button" disabled={busy || !resetAllowed} onClick={() => resetPassword(account)}>Reset Password</button>}
+                    <button type="button" disabled={busy} onClick={() => copyLoginId(account.loginId)}>Copy Login ID</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {!loading && accounts.length === 0 && <tr><td colSpan="9">આ filters માટે કોઈ account મળ્યો નથી.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {loading && <p role="status">Account યાદી લોડ થઈ રહી છે…</p>}
+      <div className="row between">
+        <button type="button" disabled={loading || busy || page <= 1} onClick={() => setPage((current) => current - 1)}>પાછળનું પાનું</button>
+        <span className="muted">કુલ {total.toLocaleString()} · પાનું {page}/{pageCount} (દરેક પાનામાં {PAGE_SIZE})</span>
+        <button type="button" disabled={loading || busy || page >= pageCount} onClick={() => setPage((current) => current + 1)}>આગળનું પાનું</button>
+      </div>
     </section>
   );
 }

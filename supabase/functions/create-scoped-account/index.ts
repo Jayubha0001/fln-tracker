@@ -74,37 +74,74 @@ async function handle(request: Request) {
   const code = payload.code;
   const districtCode = payload.role === 'district' ? code : code.slice(0, 4);
   const blockCode = payload.role === 'block' ? code : null;
+  const { error: auditSchemaError } = await admin.from('admin_account_audit').select('id').limit(0);
+  if (auditSchemaError) {
+    console.error('Central account audit schema is unavailable:', auditSchemaError.message);
+    return response(503, {
+      error: `admin_account_audit migration 202610150001_central_login_management.sql યોગ્ય Supabase project પર લાગુ નથી અથવા API schema cache જૂનો છે. કોઈ account create કરાયો નથી.`,
+    });
+  }
+  async function audit(profileId: string | null, result: 'success' | 'failed', detailCode: string) {
+    const { error } = await admin.from('admin_account_audit').insert({
+      actor_id: authData.user.id,
+      account_type: payload.role,
+      target_profile_id: profileId,
+      district_code: districtCode,
+      block_code: blockCode,
+      result,
+      detail_code: detailCode,
+    });
+    if (error) throw error;
+  }
   const { data: matchingSchool, error: schoolError } = await admin.from('schools')
     .select('id').like('code', `${code}%`).eq('active', true).limit(1).maybeSingle();
   if (schoolError) {
     console.error('Unable to validate regional code against schools:', schoolError.message);
+    await audit(null, 'failed', 'school_scope_lookup_failed');
     return response(500, { error: 'આ code માટે શાળાઓ ચકાસી શકાઈ નથી.' });
   }
-  if (!matchingSchool) return response(404, { error: 'આ code સાથે મેળ ખાતી સક્રિય શાળા મળી નથી.' });
+  if (!matchingSchool) {
+    await audit(null, 'failed', 'active_school_missing');
+    return response(404, { error: 'આ code સાથે મેળ ખાતી સક્રિય શાળા મળી નથી.' });
+  }
 
   const scopeColumn = payload.role === 'district' ? 'district_code' : 'block_code';
   const { data: existingProfile, error: existingError } = await admin.from('profiles')
     .select('id,email,active').eq('role', payload.role).eq(scopeColumn, code).maybeSingle();
   if (existingError) {
     console.error('Unable to inspect existing scoped profile:', existingError.message);
+    await audit(null, 'failed', 'profile_lookup_failed');
     return response(500, { error: 'હાલનો scoped account ચકાસી શકાયો નથી.' });
   }
   if (existingProfile) {
+    await audit(existingProfile.id, 'failed', 'profile_already_exists');
     return response(409, { error: 'આ વિસ્તારનું login પહેલેથી છે. કોઈ duplicate Auth user બનાવ્યો નથી.', exists: true, loginId: code });
   }
 
   const projectRef = new URL(url).hostname.split('.')[0];
   const email = `${payload.role}-${code}@${projectRef}.supabase.co`;
   const password = createTemporaryPassword();
-  const { data: created, error: createError } = await admin.auth.admin.createUser({
-    email, password, email_confirm: true, user_metadata: {},
-  });
+  let created;
+  let createError;
+  try {
+    ({ data: created, error: createError } = await admin.auth.admin.createUser({
+      email, password, email_confirm: true, user_metadata: {},
+    }));
+  } catch (cause) {
+    console.error(`Scoped Auth creation outcome is unknown for ${payload.role}-${code}:`, cause);
+    await audit(null, 'failed', 'auth_create_outcome_unknown');
+    return response(502, {
+      error: 'Auth create requestનો response મળ્યો નથી; સ્થિતિ અસ્પષ્ટ છે. ફરી પ્રયાસ કરતાં પહેલાં Auth અને profiles તપાસો.',
+      outcomeUnknown: true,
+    });
+  }
   if (createError || !created.user) {
     const status = typeof (createError as { status?: unknown })?.status === 'number'
       ? (createError as { status: number }).status
       : 502;
     const duplicate = status === 422 || /already|exists|duplicate/i.test(createError?.message || '');
     console.error(`Unable to create scoped Auth user ${payload.role}-${code}:`, { status, message: createError?.message });
+    await audit(null, 'failed', duplicate ? 'auth_user_conflict' : 'auth_user_create_failed');
     return response(duplicate ? 409 : 502, {
       error: createError?.message || 'Supabase Authએ user બનાવ્યો નથી.',
       code: duplicate ? 'AUTH_USER_EXISTS_OR_CONFLICT' : 'AUTH_USER_CREATE_FAILED',
@@ -124,9 +161,19 @@ async function handle(request: Request) {
   });
   if (profileError) {
     console.error(`Scoped profile insert failed for ${payload.role}-${code}:`, profileError.message);
+    await audit(null, 'failed', 'profile_insert_failed');
     return response(500, {
       error: 'Auth user બન્યો, પણ profile insert નિષ્ફળ. Password બતાવ્યો નથી; user delete નથી કર્યો. ફરી પ્રયાસ પહેલાં Auth/profiles reconcile કરો.',
       profileInsertFailed: true,
+    });
+  }
+  try {
+    await audit(created.user.id, 'success', 'account_created');
+  } catch (cause) {
+    console.error('Scoped account created but central audit insert failed:', cause);
+    return response(500, {
+      error: 'Auth/profile account બન્યું પરંતુ audit log સાચવાયો નથી. Password દર્શાવ્યો નથી; retry પહેલાં Auth, profile અને audit તપાસો.',
+      outcomeUnknown: true,
     });
   }
   return response(200, { role: payload.role, loginId: code, temporaryPassword: password, mustChangePassword: true });

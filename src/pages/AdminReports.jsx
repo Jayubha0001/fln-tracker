@@ -102,6 +102,35 @@ export default function AdminReports({ supabase }) {
     }
   }
 
+  async function exportPendingList() {
+    setBusy(true);
+    setError('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
+        body: { action: 'pending-export', filters: applied },
+        responseType: 'blob',
+      });
+      if (invokeError) {
+        setError(await errorMessage(invokeError));
+        return;
+      }
+      if (!(data instanceof Blob) || data.size === 0) {
+        setError('Pending Excel export ખાલી અથવા અમાન્ય છે; ફરી પ્રયાસ કરતાં પહેલાં function logs તપાસો.');
+        return;
+      }
+      const url = URL.createObjectURL(data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `fln-pending-${applied.startDate}-${applied.endDate}.xlsx`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) {
+      setError(`Pending list download નિષ્ફળ: ${cause.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function update(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
@@ -129,6 +158,7 @@ export default function AdminReports({ supabase }) {
         </label>
         <button className="primary" disabled={busy}>Report જુઓ</button>
         <button type="button" disabled={busy || !report} onClick={exportReport}>તમામ શાળાઓની એન્ટ્રી – Excel Export</button>
+        <button type="button" disabled={busy || !report} onClick={exportPendingList}>બાકી વિદ્યાર્થીઓ – Excel Download</button>
       </form>
       <p className="muted">તારીખના filters `updated_at` (સાચવવાનો સમય) પર લાગુ પડે છે. જૂની entries માટે મૂળ assessment date અજ્ઞાત હોઈ શકે.</p>
       {error && <p className="error" role="alert">{error}</p>}

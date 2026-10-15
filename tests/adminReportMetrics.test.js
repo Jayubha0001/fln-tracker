@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReportMetrics } from '../supabase/functions/_shared/reportMetrics.js';
+import { buildPendingStudents, buildReportMetrics } from '../supabase/functions/_shared/reportMetrics.js';
 
 test('calculates pending and submissions independently by school and grade', () => {
   const schools = [
@@ -54,4 +54,39 @@ test('counts repeated saves as submissions by save date, but once for pending st
   assert.equal(report.totals.submitted, 2);
   assert.deepEqual(report.daily, [{ date: '2026-10-02', submitted: 2 }]);
   assert.equal(entries[0].assessment_date, null);
+});
+
+test('lists enrolled students without a matching submission in the selected report period', () => {
+  const schools = [
+    { id: 'school-a', code: '2', name: 'A', district: 'D', block: 'T' },
+    { id: 'school-b', code: '1', name: 'B', district: 'D', block: 'U' },
+  ];
+  const students = [
+    { id: 'submitted', name: 'Submitted', school_id: 'school-a', dhoran: '2' },
+    { id: 'pending-a', name: 'Pending A', school_id: 'school-a', dhoran: '2' },
+    { id: 'pending-b', name: 'Pending B', school_id: 'school-b', dhoran: 'B' },
+    { id: 'other-grade', name: 'Other Grade', school_id: 'school-a', dhoran: '1' },
+  ];
+  const entries = [{ student_id: 'submitted', school_id: 'school-a', dhoran: '2' }];
+
+  assert.deepEqual(buildPendingStudents(schools, students, entries, ['B', '2']), [
+    {
+      schoolCode: '1',
+      schoolName: 'B',
+      district: 'D',
+      block: 'U',
+      studentId: 'pending-b',
+      studentName: 'Pending B',
+      dhoran: 'B',
+    },
+    {
+      schoolCode: '2',
+      schoolName: 'A',
+      district: 'D',
+      block: 'T',
+      studentId: 'pending-a',
+      studentName: 'Pending A',
+      dhoran: '2',
+    },
+  ]);
 });

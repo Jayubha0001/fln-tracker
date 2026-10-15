@@ -60,3 +60,27 @@ export function buildReportMetrics(schools, enrollmentBySchoolGrade, entries, gr
     },
   };
 }
+
+export function buildPendingStudents(schools, students, entries, grades) {
+  const schoolById = new Map(schools.map((school) => [school.id, school]));
+  const submitted = new Set(entries.map((entry) =>
+    `${entry.school_id}:${entry.dhoran}:${entry.student_id}`));
+
+  return students.flatMap((student) => {
+    const school = schoolById.get(student.school_id);
+    if (!school || !grades.includes(student.dhoran)
+      || submitted.has(`${student.school_id}:${student.dhoran}:${student.id}`)) return [];
+    return [{
+      schoolCode: school.code,
+      schoolName: school.name,
+      district: school.district,
+      block: school.block,
+      studentId: student.id,
+      studentName: student.name,
+      dhoran: student.dhoran,
+    }];
+  }).sort((left, right) =>
+    left.schoolCode.localeCompare(right.schoolCode)
+      || left.dhoran.localeCompare(right.dhoran)
+      || left.studentName.localeCompare(right.studentName));
+}

@@ -77,6 +77,20 @@ Deno.serve(async (request) => {
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.schoolId)) {
     return response(400, { error: 'માન્ય school UUID આપો.' });
   }
+  const { error: centralAuditSchemaError } = await admin.from('admin_account_audit').select('id').limit(0);
+  if (centralAuditSchemaError) {
+    console.error('Central account audit schema is unavailable:', centralAuditSchemaError.message);
+    return response(503, {
+      error: 'admin_account_audit migration 202610150001_central_login_management.sql યોગ્ય Supabase project પર લાગુ નથી અથવા API schema cache જૂનો છે. કોઈ password reset કરાયો નથી.',
+    });
+  }
+  const { error: schoolAuditSchemaError } = await admin.from('school_password_reset_audit').select('id').limit(0);
+  if (schoolAuditSchemaError) {
+    console.error('School password reset audit schema is unavailable:', schoolAuditSchemaError.message);
+    return response(503, {
+      error: `school_password_reset_audit migration 202610140001_admin_reporting_and_password_audit.sql યોગ્ય Supabase project પર લાગુ નથી અથવા PostgREST schema cache જૂનો છે. કોઈ password reset કરાયો નથી.`,
+    });
+  }
 
   const { data: school, error: schoolError } = await admin
     .from('schools')
@@ -98,10 +112,24 @@ Deno.serve(async (request) => {
     });
     if (error) throw error;
   }
+  async function auditCentral(profileId: string | null, result: 'success' | 'failed', detailCode: string) {
+    const { error } = await admin.from('admin_account_audit').insert({
+      actor_id: actorId,
+      account_type: 'school',
+      target_profile_id: profileId,
+      district_code: /^\d{11}$/.test(school.code) ? school.code.slice(0, 4) : null,
+      block_code: /^\d{11}$/.test(school.code) ? school.code.slice(0, 6) : null,
+      school_id: school.id,
+      result,
+      detail_code: detailCode,
+    });
+    if (error) throw error;
+  }
 
   if (!school.active) {
     try {
       await audit('failed', 'school_inactive');
+      await auditCentral(null, 'failed', 'school_inactive');
     } catch (auditError) {
       console.error('Unable to audit inactive-school reset attempt:', auditError);
     }
@@ -118,6 +146,7 @@ Deno.serve(async (request) => {
     console.error('Unable to inspect school profile for password reset:', profileError.message);
     try {
       await audit('failed', 'profile_lookup_failed');
+      await auditCentral(null, 'failed', 'profile_lookup_failed');
     } catch (auditError) {
       console.error('Unable to audit school profile lookup failure:', auditError);
     }
@@ -126,6 +155,7 @@ Deno.serve(async (request) => {
   if (!profile || !profile.active || profile.school_id !== school.id) {
     try {
       await audit('failed', 'school_profile_missing_or_inactive');
+      await auditCentral(profile?.id || null, 'failed', 'school_profile_missing_or_inactive');
     } catch (auditError) {
       console.error('Unable to audit missing school profile:', auditError);
     }
@@ -133,9 +163,14 @@ Deno.serve(async (request) => {
   }
 
   const { data: userData, error: userError } = await admin.auth.admin.getUserById(profile.id);
-  if (userError || !userData.user || userData.user.email?.toLowerCase() !== profile.email.toLowerCase()) {
+  const projectRef = new URL(url).hostname.split('.')[0];
+  const expectedEmail = `school-${school.code}@${projectRef}.supabase.co`.toLowerCase();
+  if (userError || !userData.user || userData.user.id !== profile.id
+    || userData.user.email?.toLowerCase() !== profile.email.toLowerCase()
+    || profile.email.toLowerCase() !== expectedEmail) {
     try {
       await audit('failed', 'auth_profile_mismatch');
+      await auditCentral(profile.id, 'failed', 'auth_profile_mismatch');
     } catch (auditError) {
       console.error('Unable to audit school reset validation failure:', auditError);
     }
@@ -143,10 +178,26 @@ Deno.serve(async (request) => {
   }
 
   const password = temporaryPassword();
-  const { error: resetError } = await admin.auth.admin.updateUserById(profile.id, { password });
+  let resetError;
+  try {
+    ({ error: resetError } = await admin.auth.admin.updateUserById(profile.id, { password }));
+  } catch (cause) {
+    console.error('School Auth reset outcome is unknown:', cause);
+    try {
+      await audit('failed', 'auth_reset_outcome_unknown');
+      await auditCentral(profile.id, 'failed', 'auth_reset_outcome_unknown');
+    } catch (auditError) {
+      console.error('Unable to audit unknown school reset outcome:', auditError);
+    }
+    return response(502, {
+      error: 'Auth reset requestનો response મળ્યો નથી; password બદલાયો હોઈ શકે છે. ફરી reset ન કરો; Auth, profile અને audit સ્થિતિ verify કરો.',
+      outcomeUnknown: true,
+    });
+  }
   if (resetError) {
     try {
       await audit('failed', 'auth_password_update_failed');
+      await auditCentral(profile.id, 'failed', 'auth_password_update_failed');
     } catch (auditError) {
       console.error('Unable to audit Auth password update failure:', auditError);
     }
@@ -154,17 +205,20 @@ Deno.serve(async (request) => {
     return response(500, { error: 'Supabase Auth password reset નિષ્ફળ થયું; credential દર્શાવવામાં આવ્યો નથી.' });
   }
 
-  const { error: markError } = await admin
+  const { data: changedProfile, error: markError } = await admin
     .from('profiles')
     .update({ must_change_password: true })
     .eq('id', profile.id)
     .eq('school_id', school.id)
     .eq('role', 'school')
-    .eq('active', true);
-  if (markError) {
-    console.error('Password reset succeeded but mandatory password change could not be set:', markError.message);
+    .eq('active', true)
+    .select('id')
+    .maybeSingle();
+  if (markError || !changedProfile) {
+    console.error('Password reset succeeded but mandatory password change could not be set:', markError?.message || 'No matching profile updated.');
     try {
       await audit('failed', 'password_change_flag_failed');
+      await auditCentral(profile.id, 'failed', 'password_change_flag_failed');
     } catch (auditError) {
       console.error('Unable to audit password-change flag failure:', auditError);
     }
@@ -176,6 +230,7 @@ Deno.serve(async (request) => {
 
   try {
     await audit('success', null);
+    await auditCentral(profile.id, 'success', 'reset_complete');
   } catch (auditError) {
     console.error('Password reset succeeded but audit insert failed:', auditError);
     return response(500, {

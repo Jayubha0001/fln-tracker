@@ -87,7 +87,7 @@ button.mini { padding: 4px 8px; font-size: 12px; margin: 2px; white-space: nowra
 .scoped-account-tabs { margin: 8px 0 12px; }
 .scoped-account-tabs button { min-height: 48px; }
 .scoped-account-table { max-height: 65vh; margin-bottom: 10px; }
-.scoped-account-table .report-table { min-width: 980px; }
+.scoped-account-table .report-table { min-width: 1240px; }
 .scoped-account-table th { position: sticky; top: 0; z-index: 2; }
 .scoped-account-actions { min-width: 150px; white-space: nowrap; }
 .scoped-account-actions button { padding: 8px 10px; }
