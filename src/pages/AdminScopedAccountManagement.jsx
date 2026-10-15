@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { buildCredentialsCsv, confirmedCredential, mergeCredentials } from '../lib/accountCredentials.js';
+import * as XLSX from '@e965/xlsx';
+import { buildCredentialsWorkbook, accountOperationResult, confirmedCredential } from '../lib/accountCredentials.js';
+import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 
 const ACCOUNT_TYPES = [
   ['district', 'District Logins'],
@@ -43,20 +45,34 @@ function invalidListResponse(data) {
   return `HTTP 200: Login list response shape mismatch (${shape}). Expected { accounts: [], total: non-negative integer, page, pageSize }. Check the deployed Edge Function response.`;
 }
 
-function statusLabel(status) {
-  return {
-    active: 'Active',
-    missing: 'Missing',
-    inactive: 'Inactive',
-    password_change_required: 'Password Change Required',
-    needs_attention: 'ધ્યાન જરૂરી · Auth/profile mismatch',
-  }[status] || 'અજ્ઞાત';
+function validListResponse(data, page, pageSize) {
+  return data
+    && typeof data === 'object'
+    && !Array.isArray(data)
+    && Array.isArray(data.accounts)
+    && Number.isSafeInteger(data.total)
+    && data.total >= 0
+    && data.page === page
+    && data.pageSize === pageSize;
 }
 
 function lastUpdated(value) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+}
+
+function operationStatus(status, action) {
+  if (status === 'unknown') return `${action} outcome unknown`;
+  if (status === 'failed') return `${action} failed`;
+  return `${action} not confirmed`;
+}
+
+function resetOutcomeUnknown(message) {
+  if (message.includes('Password બદલાયો હોઈ શકે છે') || message.includes('outcomeUnknown')) return true;
+  if (message.includes('Auth password reset નિષ્ફળ થયું')) return false;
+  const status = Number(message.match(/HTTP (\d{3})/)?.[1]);
+  return !status || (status >= 500 && status !== 503);
 }
 
 export default function AdminScopedAccountManagement({ supabase }) {
@@ -68,14 +84,16 @@ export default function AdminScopedAccountManagement({ supabase }) {
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState({});
   const [credentials, setCredentials] = useState([]);
+  const [editingSchool, setEditingSchool] = useState(null);
+  const [schoolForm, setSchoolForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const loadAccounts = useCallback(async () => {
+  const loadAccounts = useCallback(async ({ preserveError = false } = {}) => {
     setLoading(true);
-    setError('');
+    if (!preserveError) setError('');
     try {
       const { data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
         body: {
@@ -87,13 +105,14 @@ export default function AdminScopedAccountManagement({ supabase }) {
         },
       });
       if (invokeError) throw new Error(await functionError(invokeError));
-      if (!Array.isArray(data?.accounts) || !Number.isSafeInteger(data?.total) || data.total < 0) {
-        throw new Error(invalidListResponse(data));
-      }
+      if (!validListResponse(data, page, PAGE_SIZE)) throw new Error(invalidListResponse(data));
       setAccounts(data.accounts);
       setTotal(data.total);
     } catch (cause) {
-      setError(`Login યાદી લોડ ન થઈ: ${cause.message}`);
+      setError((current) => [
+        preserveError ? current : '',
+        `Login યાદી લોડ ન થઈ: ${cause.message}`,
+      ].filter(Boolean).join(' '));
     } finally {
       setLoading(false);
     }
@@ -107,11 +126,23 @@ export default function AdminScopedAccountManagement({ supabase }) {
     setSelected({});
   }, [accountType, page, appliedFilters]);
 
+  useEffect(() => {
+    if (!credentials.some((result) => result.temporaryPassword)) return undefined;
+    function warnBeforeClose(event) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', warnBeforeClose);
+    return () => window.removeEventListener('beforeunload', warnBeforeClose);
+  }, [credentials]);
+
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const selectedMissing = useMemo(() => accounts.filter((account) =>
-    selected[`${account.accountType}:${account.loginId}`]
-      && account.accountStatus === 'missing'
-      && (account.accountType !== 'school' || account.active)), [accounts, selected]);
+  const selectedAccounts = useMemo(() => accounts.filter((account) =>
+    selected[`${account.accountType}:${account.loginId}`]), [accounts, selected]);
+  const selectedMissing = selectedAccounts.filter((account) =>
+    account.accountStatus === 'missing' && (account.accountType !== 'school' || account.active));
+  const selectedResettable = selectedAccounts.filter((account) =>
+    ['active', 'password_change_required'].includes(account.accountStatus) && account.identityConsistent);
   const missingOnPage = accounts.filter((account) =>
     account.accountStatus === 'missing' && (account.accountType !== 'school' || account.active));
 
@@ -131,138 +162,263 @@ export default function AdminScopedAccountManagement({ supabase }) {
     return result;
   }
 
+  function recordFailure(account, action, cause, outcomeUnknown = false) {
+    return {
+      result: accountOperationResult(account, '', operationStatus(outcomeUnknown ? 'unknown' : 'failed', action)),
+      message: `${account.loginId}: ${cause}`,
+    };
+  }
+
   async function createAccounts(targets) {
     if (!targets.length || busy) return;
     if (!window.confirm(`${targets.length} પસંદ કરેલા missing account માટે Login બનાવવા?`)) return;
     setBusy(true);
     setError('');
     setMessage('');
-    const generated = [];
-    let uncertain = '';
+    setCredentials([]);
+    const results = [];
+    const failures = [];
     try {
       const schools = targets.filter((account) => account.accountType === 'school');
       if (schools.length) {
-        const { data, error: invokeError } = await supabase.functions.invoke('create-school-account', {
-          body: { schoolIds: schools.map((account) => account.schoolId) },
-        });
-        if (invokeError) throw new Error(await functionError(invokeError));
-        if (!Array.isArray(data?.outcomes) || !Array.isArray(data?.created)) {
-          throw new Error('School account outcome response અમાન્ય છે. Requestની સ્થિતિ અસ્પષ્ટ છે; ફરી પ્રયાસ ન કરો, પહેલા Auth અને profile તપાસો.');
+        try {
+          const { data, error: invokeError } = await supabase.functions.invoke('create-school-account', {
+            body: { schoolIds: schools.map((account) => account.schoolId) },
+          });
+          if (invokeError) throw new Error(await functionError(invokeError));
+          if (!Array.isArray(data?.outcomes) || !Array.isArray(data?.created)) {
+            throw new Error('School account outcome response અમાન્ય છે; requestની સ્થિતિ અસ્પષ્ટ છે.');
+          }
+          for (const account of schools) {
+            const outcome = data.outcomes.find((item) => item.schoolCode === account.loginId);
+            const provisioned = data.created.find((item) => item.schoolCode === account.loginId);
+            if (outcome?.status === 'created' && typeof provisioned?.password === 'string' && provisioned.password) {
+              try {
+                results.push(credentialFrom(account, {
+                  loginId: account.loginId,
+                  schoolCode: account.loginId,
+                  temporaryPassword: provisioned.password,
+                  mustChangePassword: true,
+                }, 'create'));
+              } catch (cause) {
+                const failure = recordFailure(account, 'Creation', cause.message, true);
+                results.push(failure.result);
+                failures.push(failure.message);
+              }
+            } else {
+              const unknown = outcome?.status === 'unknown';
+              const detail = outcome?.reason || (outcome?.status === 'already_exists'
+                ? 'Login પહેલેથી હાજર છે.'
+                : 'Serverએ creation સફળ ગણાવી નથી.');
+              const failure = recordFailure(account, 'Creation', detail, unknown);
+              results.push(failure.result);
+              if (outcome?.status !== 'already_exists') failures.push(failure.message);
+            }
+          }
+        } catch (cause) {
+          for (const account of schools) {
+            const failure = recordFailure(account, 'Creation', cause.message, true);
+            results.push(failure.result);
+            failures.push(failure.message);
+          }
         }
-        for (const account of schools) {
-          const outcome = data.outcomes.find((item) => item.schoolCode === account.loginId);
-          const provisioned = data.created.find((item) => item.schoolCode === account.loginId);
-          if (outcome?.status !== 'created' || !provisioned?.password) continue;
-          generated.push(credentialFrom(account, {
-            loginId: account.loginId,
-            schoolCode: account.loginId,
-            temporaryPassword: provisioned.password,
-            mustChangePassword: true,
-          }, 'create'));
-        }
-        if (data.outcomes.some((item) => item.status === 'unknown')) {
-          uncertain = 'એક અથવા વધુ School Loginની સ્થિતિ અસ્પષ્ટ છે; ફરી પ્રયાસ કરતાં પહેલાં Auth અને profiles તપાસો.';
-        } else if (data.outcomes.some((item) => item.status === 'already_exists')) {
-          setMessage('પસંદ કરેલા એક અથવા વધુ Login પહેલેથી હાજર છે; ફરી create ન કરાયા. યાદી ફરી તપાસો.');
-        }
-        const failures = data.outcomes.filter((item) => item.status === 'failed');
-        if (failures.length) setError(failures.map((item) => `${item.schoolCode}: ${item.reason}`).join('; '));
       }
+
       for (const account of targets.filter((item) => item.accountType !== 'school')) {
         try {
           const { data, error: invokeError } = await supabase.functions.invoke('create-scoped-account', {
             body: { role: account.accountType, code: account.loginId },
           });
           if (invokeError) throw new Error(await functionError(invokeError));
-          generated.push(credentialFrom(account, data, 'create'));
+          results.push(credentialFrom(account, data, 'create'));
         } catch (cause) {
-          uncertain = `${account.accountType} ${account.loginId}: ${cause.message} સ્થિતિ verify કર્યા વગર ફરી પ્રયાસ ન કરો.`;
-          break;
+          const failure = recordFailure(account, 'Creation', cause.message, true);
+          results.push(failure.result);
+          failures.push(failure.message);
         }
       }
-      if (generated.length) {
-        setCredentials((current) => mergeCredentials(current, generated));
-        setMessage(`${generated.length} નવા Login server દ્વારા confirm થયા. Credentials CSV તાત્કાલિક download કરો.`);
-      }
-      if (uncertain) setError((current) => [current, uncertain].filter(Boolean).join(' '));
-      await loadAccounts();
-    } catch (cause) {
-      setError((current) => [current, cause.message].filter(Boolean).join(' '));
-      setMessage(generated.length
-        ? `${generated.length} સફળ credentials ઉપલબ્ધ છે; બાકીની requestની સ્થિતિ અસ્પષ્ટ છે.`
-        : '');
-      if (generated.length) setCredentials((current) => mergeCredentials(current, generated));
-      await loadAccounts();
+
+      setCredentials(results);
+      const successes = results.filter((result) => result.temporaryPassword).length;
+      if (successes) setMessage(`${successes} નવા Login server દ્વારા confirm થયા.`);
+      if (failures.length) setError(failures.join('; '));
+      await loadAccounts({ preserveError: true });
     } finally {
       setBusy(false);
     }
   }
 
-  async function resetPassword(account) {
-    if (!['active', 'password_change_required'].includes(account.accountStatus) || !account.identityConsistent) {
-      setError('Account status અથવા Auth/profile consistency reset માટે યોગ્ય નથી. પહેલા Auth અને profiles તપાસો.');
-      return;
-    }
-    if (!window.confirm(`${account.loginId}નું password reset કરવું? હાલનો password તરત અમાન્ય થશે.`)) return;
+  async function resetPasswords(targets) {
+    if (!targets.length || busy) return;
+    const targetLabels = targets.map((account) => `${account.accountType} ${account.loginId}`).join(', ');
+    if (!window.confirm(`${targetLabels}નું password reset કરવું? ${targets.length > 1 ? 'ફક્ત ઉપર દર્શાવેલા પસંદ કરેલા accounts reset થશે.' : 'હાલનો password તરત અમાન્ય થશે.'}`)) return;
     setBusy(true);
     setError('');
     setMessage('');
+    setCredentials([]);
+    const results = [];
+    const failures = [];
     try {
-      let data;
-      let invokeError;
-      if (account.accountType === 'school') {
-        ({ data, error: invokeError } = await supabase.functions.invoke('admin-school-password-reset', {
-          body: { schoolId: account.schoolId },
-        }));
-      } else {
-        ({ data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
-          body: { action: 'reset-password', role: account.accountType, code: account.loginId },
-        }));
+      for (const account of targets) {
+        try {
+          let data;
+          let invokeError;
+          if (account.accountType === 'school') {
+            ({ data, error: invokeError } = await supabase.functions.invoke('admin-school-password-reset', {
+              body: { schoolId: account.schoolId },
+            }));
+          } else {
+            ({ data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
+              body: { action: 'reset-password', role: account.accountType, code: account.loginId },
+            }));
+          }
+          if (invokeError) throw new Error(await functionError(invokeError));
+          results.push(credentialFrom(account, data, 'reset'));
+        } catch (cause) {
+          const failure = recordFailure(account, 'Reset', cause.message, resetOutcomeUnknown(cause.message));
+          results.push(failure.result);
+          failures.push(failure.message);
+        }
       }
-      if (invokeError) throw new Error(await functionError(invokeError));
-      const credential = credentialFrom(account, data, 'reset');
-      setCredentials((current) => mergeCredentials(current, [credential]));
-      setMessage(`${account.loginId} reset સફળ થયો. નવી credential CSV તાત્કાલિક download કરો.`);
-      await loadAccounts();
-    } catch (cause) {
-      setError(`${cause.message} Unknown outcome હોય તો reset ફરી ન કરો; પહેલા Auth, profile અને audit સ્થિતિ તપાસો.`);
-      await loadAccounts();
+      setCredentials(results);
+      const successes = results.filter((result) => result.temporaryPassword).length;
+      if (successes) setMessage(`${successes} password reset Supabase દ્વારા confirm થયા.`);
+      if (failures.length) setError(failures.join('; '));
+      await loadAccounts({ preserveError: true });
     } finally {
       setBusy(false);
     }
   }
 
-  async function copyLoginId(loginId) {
+  async function copyText(value, label) {
     try {
-      await navigator.clipboard.writeText(loginId);
-      setMessage(`Login ID ${loginId} copy થયો.`);
+      await navigator.clipboard.writeText(value);
+      setMessage(`${label} copy થયું.`);
     } catch (cause) {
-      setError(`Login ID copy ન થઈ શક્યો: ${cause.message}`);
+      setError(`${label} copy ન થઈ શક્યું: ${cause.message}`);
     }
   }
 
   function downloadCredentials() {
-    const blob = new Blob([`\uFEFF${buildCredentialsCsv(credentials)}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'fln-new-login-credentials.csv';
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    try {
+      const workbook = buildCredentialsWorkbook(credentials);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      XLSX.writeFile(workbook, `fln-credentials-${timestamp}.xlsx`);
+    } catch (cause) {
+      setError(`Excel file બનાવી શકાઈ નથી: ${cause.message}`);
+    }
   }
+
+  function closeCredentials() {
+    if (credentials.some((result) => result.temporaryPassword)
+      && !window.confirm('One-time credentials panel બંધ કરશો? ત્યારબાદ આ passwords ફરી જોઈ શકાશે નહીં. ખાતરી કરો કે copy/download કરી લીધું છે.')) return;
+    setCredentials([]);
+    setMessage('');
+  }
+
+  async function editSchool(account) {
+    setError('');
+    setMessage('');
+    setBusy(true);
+    try {
+      const { data, error: queryError } = await supabase.from('schools')
+        .select('id, district, block, cluster, code, name, active')
+        .eq('id', account.schoolId)
+        .maybeSingle();
+      if (queryError) throw queryError;
+      if (!data) throw new Error('શાળા record મળી નથી.');
+      setEditingSchool(data);
+      setSchoolForm({
+        district: data.district || '',
+        block: data.block || '',
+        cluster: data.cluster || '',
+        name: data.name || '',
+        active: data.active === true,
+      });
+    } catch (cause) {
+      setError(`શાળાની વિગતો લોડ થઈ શકી નથી: ${cause.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSchool(event) {
+    event.preventDefault();
+    if (!editingSchool || busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const { data, error: updateError } = await supabase.from('schools')
+        .update({
+          district: schoolForm.district.trim(),
+          block: schoolForm.block.trim(),
+          cluster: schoolForm.cluster.trim(),
+          name: schoolForm.name.trim(),
+          active: schoolForm.active,
+        })
+        .eq('id', editingSchool.id)
+        .select('id')
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!data) throw new Error('કોઈ શાળા record અપડેટ થયું નથી.');
+      setEditingSchool(null);
+      setSchoolForm(null);
+      setMessage('શાળાની વિગતો અપડેટ થઈ. School ID અને સંબંધિત student/entry records બદલાયા નથી.');
+      await loadAccounts();
+    } catch (cause) {
+      setError(`શાળાની વિગતો અપડેટ થઈ શકી નથી: ${cause.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const successfulCredentials = credentials.filter((result) => result.temporaryPassword);
 
   return (
     <section className="card scoped-account-management">
       <h2>Login &amp; Password Management</h2>
       <p className="muted">
-        District, Block અને School loginsની server-filtered યાદી. Password માત્ર સફળ create/reset પછી આ સત્રમાં મળે છે; હાલના passwords વાંચી શકાતા નથી.
+        District, Block અને School accounts એક જ જગ્યાએ સંચાલિત કરો. Temporary password ફક્ત પુષ્ટિ થયેલા create/reset responseમાં મળે છે અને આ પેજની memoryમાં જ રહે છે.
       </p>
       {error && <p className="error" role="alert">{error}</p>}
       {message && <p className="success" role="status">{message}</p>}
       {credentials.length > 0 && (
         <div className="credential-result" role="status">
-          <p className="error">આ CSVમાં ફક્ત આ સત્રમાં હમણાં સફળતાપૂર્વક બનાવેલા/reset કરેલા passwords છે. તેને સુરક્ષિત રાખો; આ browser storageમાં સાચવાયું નથી.</p>
-          <button type="button" className="primary" onClick={downloadCredentials}>Download Credentials CSV ({credentials.length})</button>
+          <h3>Operation results{successfulCredentials.length ? ' — one-time credentials' : ''}</h3>
+          <p className="error">Passwords ફક્ત સફળતાપૂર્વક પુષ્ટિ થયેલા accounts માટે દર્શાવાય છે. આ પેજની memoryમાં જ રાખવામાં આવે છે; panel બંધ કરતાં પહેલાં copy અથવા download કરો.</p>
+          <div className="scroll">
+            <table className="report-table">
+              <thead><tr><th>Account Type</th><th>Login ID</th><th>Reset status</th><th>Temporary Password</th><th>Actions</th></tr></thead>
+              <tbody>{credentials.map((result) => (
+                <tr key={`${result.accountType}:${result.loginId}`}>
+                  <td>{result.accountType}</td>
+                  <td>{result.loginId}</td>
+                  <td>{result.status}</td>
+                  <td>{result.temporaryPassword ? <code>{result.temporaryPassword}</code> : '—'}</td>
+                  <td>
+                    <button type="button" onClick={() => copyText(result.loginId, 'Login ID')}>Copy Login ID</button>
+                    {result.temporaryPassword && <button type="button" onClick={() => copyText(result.temporaryPassword, 'Password')}>Copy Password</button>}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          {successfulCredentials.some((result) => result.passwordMode === 'shared-configured') && (
+            <p className="error">ચેતવણી: Server પર shared temporary password configure છે. તેને બધા accounts માટે વાપરવાથી ગંભીર જોખમ છે; દરેક userએ તરત password બદલવો જરૂરી છે.</p>
+          )}
+          {credentials.some((result) => !result.temporaryPassword) && (
+            <p className="muted">
+              {credentials.filter((result) => !result.temporaryPassword).map((result) =>
+                `${result.loginId}: ${result.status}`).join(' · ')}
+            </p>
+          )}
+          <div className="row">
+            <button type="button" className="primary" onClick={downloadCredentials}>
+              {successfulCredentials.length ? 'Download Credentials Excel' : 'Download Results Excel'}
+            </button>
+            <button type="button" onClick={closeCredentials}>Close one-time credentials</button>
+          </div>
         </div>
       )}
       <nav className="scoped-account-tabs" aria-label="Account type">
@@ -271,6 +427,7 @@ export default function AdminScopedAccountManagement({ supabase }) {
             type="button"
             key={value}
             className={accountType === value ? 'on' : ''}
+            aria-selected={accountType === value}
             onClick={() => { setPage(1); setAccountType(value); }}
           >{label}</button>
         ))}
@@ -299,7 +456,7 @@ export default function AdminScopedAccountManagement({ supabase }) {
             <option value="needs_attention">Auth/profile mismatch</option>
           </select>
         </label>
-        <button className="primary" disabled={busy}>ફિલ્ટર લાગુ કરો</button>
+        <button type="submit" className="primary filter-submit" disabled={busy}>ફિલ્ટર લાગુ કરો</button>
       </form>
       {missingOnPage.length > 0 && (
         <div className="row">
@@ -311,11 +468,18 @@ export default function AdminScopedAccountManagement({ supabase }) {
           </button>
         </div>
       )}
+      {selectedResettable.length > 0 && (
+        <div className="row">
+          <button type="button" disabled={busy} onClick={() => resetPasswords(selectedResettable)}>
+            પસંદ કરેલા {selectedResettable.length} accountનું bulk reset
+          </button>
+        </div>
+      )}
       <div className="scroll scoped-account-table">
         <table className="report-table">
           <thead><tr>
             <th>પસંદ કરો</th><th>Account Type</th><th>District / Code</th><th>Block / Code</th>
-            <th>School / ID</th><th>Login ID / Email</th><th>Status</th><th>Last Updated</th><th>Actions</th>
+            <th>School / ID</th><th>Login ID</th><th>Last Updated</th><th>Actions</th>
           </tr></thead>
           <tbody>
             {accounts.map((account) => {
@@ -324,12 +488,20 @@ export default function AdminScopedAccountManagement({ supabase }) {
                 && (account.accountType !== 'school' || account.active);
               const resetAllowed = ['active', 'password_change_required'].includes(account.accountStatus)
                 && account.identityConsistent;
+              const school = account.accountType === 'school' ? {
+                id: account.schoolId,
+                code: account.loginId,
+                name: account.schoolName,
+                district: account.districtName,
+                block: account.blockName,
+                active: account.active,
+              } : null;
               return (
                 <tr key={key}>
                   <td><input
                     type="checkbox"
                     aria-label={`${account.loginId} પસંદ કરો`}
-                    disabled={!createAllowed || busy}
+                    disabled={busy || (!createAllowed && !resetAllowed)}
                     checked={Boolean(selected[key])}
                     onChange={(event) => setSelected((current) => ({ ...current, [key]: event.target.checked }))}
                   /></td>
@@ -337,19 +509,24 @@ export default function AdminScopedAccountManagement({ supabase }) {
                   <td>{account.districtName || '—'} · {account.districtCode || '—'}</td>
                   <td>{account.blockName ? `${account.blockName} · ${account.blockCode}` : '—'}</td>
                   <td>{account.schoolName ? `${account.schoolName} · ${account.loginId}` : '—'}</td>
-                  <td>{account.loginId}<br /><small>{account.email}</small></td>
-                  <td>{statusLabel(account.accountStatus)}</td>
+                  <td>{account.loginId}</td>
                   <td>{lastUpdated(account.lastUpdated)}</td>
                   <td className="scoped-account-actions">
                     {createAllowed
                       ? <button type="button" disabled={busy} onClick={() => createAccounts([account])}>Create Login</button>
-                      : <button type="button" disabled={busy || !resetAllowed} onClick={() => resetPassword(account)}>Reset Password</button>}
-                    <button type="button" disabled={busy} onClick={() => copyLoginId(account.loginId)}>Copy Login ID</button>
+                      : <button type="button" disabled={busy || !resetAllowed} onClick={() => resetPasswords([account])}>Reset Password</button>}
+                    <button type="button" disabled={busy} onClick={() => copyText(account.loginId, 'Login ID')}>Copy Login ID</button>
+                    {account.accountType === 'school' && (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => editSchool(account)}>Edit School Details</button>
+                        <SchoolYearReportButton supabase={supabase} school={school} />
+                      </>
+                    )}
                   </td>
                 </tr>
               );
             })}
-            {!loading && accounts.length === 0 && <tr><td colSpan="9">આ filters માટે કોઈ account મળ્યો નથી.</td></tr>}
+            {!loading && accounts.length === 0 && <tr><td colSpan="8">આ filters માટે કોઈ account મળ્યો નથી.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -359,6 +536,25 @@ export default function AdminScopedAccountManagement({ supabase }) {
         <span className="muted">કુલ {total.toLocaleString()} · પાનું {page}/{pageCount} (દરેક પાનામાં {PAGE_SIZE})</span>
         <button type="button" disabled={loading || busy || page >= pageCount} onClick={() => setPage((current) => current + 1)}>આગળનું પાનું</button>
       </div>
+      {editingSchool && schoolForm && (
+        <form className="card scoped-school-edit" onSubmit={saveSchool}>
+          <h3>Edit School Details — {editingSchool.name}</h3>
+          <p className="muted">School ID is read-only. Student and entry relationships are preserved.</p>
+          <label>School ID<input value={editingSchool.code} readOnly /></label>
+          <label>District<input required value={schoolForm.district} onChange={(event) => setSchoolForm((current) => ({ ...current, district: event.target.value }))} /></label>
+          <label>Block<input required value={schoolForm.block} onChange={(event) => setSchoolForm((current) => ({ ...current, block: event.target.value }))} /></label>
+          <label>Cluster<input value={schoolForm.cluster} onChange={(event) => setSchoolForm((current) => ({ ...current, cluster: event.target.value }))} /></label>
+          <label>School name<input required value={schoolForm.name} onChange={(event) => setSchoolForm((current) => ({ ...current, name: event.target.value }))} /></label>
+          <label className="check-label">
+            <input type="checkbox" checked={schoolForm.active} onChange={(event) => setSchoolForm((current) => ({ ...current, active: event.target.checked }))} />
+            Active
+          </label>
+          <div className="row">
+            <button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save School Details'}</button>
+            <button type="button" disabled={busy} onClick={() => { setEditingSchool(null); setSchoolForm(null); }}>Cancel</button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
