@@ -10,6 +10,7 @@ import ChangePassword from './pages/ChangePassword.jsx';
 import ScopedDashboard from './pages/ScopedDashboard.jsx';
 import SchoolYearReportButton from './components/SchoolYearReportButton.jsx';
 import DashboardLayout from './components/DashboardLayout.jsx';
+import AdminDashboard from './pages/AdminDashboard.jsx';
 
 const nowKey = new Date().toISOString().slice(0, 7);
 
