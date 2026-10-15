@@ -5,6 +5,8 @@ import AdminDashboard from './AdminDashboard.jsx';
 import Entry from './Entry.jsx';
 import Students from './Students.jsx';
 import Summary from './Summary.jsx';
+import DashboardLayout from '../components/DashboardLayout.jsx';
+import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 
 export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
@@ -14,7 +16,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schoolId, setSchoolId] = useState('');
   const [dhoran, setDhoran] = useState('1');
   const [month, setMonth] = useState(MONTHS[0].key);
-  const [tab, setTab] = useState('report');
+  const [activeSection, setActiveSection] = useState('dashboard');
   const [entryDirty, setEntryDirty] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,9 +48,11 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
 
   const school = schools.find((item) => item.id === schoolId) || null;
 
-  function changeTab(nextTab) {
-    if (entryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. ટેબ બદલશો?')) return;
-    setTab(nextTab);
+  function changeSection(nextSection) {
+    if (entryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. ટેબ બદલશો?')) return false;
+    setEntryDirty(false);
+    setActiveSection(nextSection);
+    return true;
   }
 
   function changeSchoolPage(nextPage) {
@@ -71,34 +75,23 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
     : `જિલ્લો ${scopedSchool?.district || profile.district_code} (${profile.district_code}) · બ્લોક ${scopedSchool?.block || profile.block_code} (${profile.block_code})`;
 
   return (
-    <div className="app">
-      <header className="no-print">
-        <div className="row between">
-          <div>
-            <h1>FLN Tracker – {isDistrict ? 'District' : 'Block'} Dashboard</h1>
-            <span className="muted">{scopeLabel} · {schoolCount.toLocaleString()} શાળાઓ</span>
-          </div>
-          <button onClick={signOutSafely}>લૉગઆઉટ</button>
-        </div>
-      </header>
-      <main>
+    <DashboardLayout
+      role={profile.role}
+      activeSection={activeSection}
+      onNavigate={changeSection}
+      onLogout={signOutSafely}
+      context={`${scopeLabel} · ${schoolCount.toLocaleString()} શાળાઓ`}
+    >
         {error && <p className="error" role="alert">{error}</p>}
-        <nav>
-          {[
-            ['report', isDistrict ? 'District report' : 'Block report'],
-            ['students', 'વિદ્યાર્થી'],
-            ['entry', 'એન્ટ્રી'],
-            ['summary', 'સારાંશ'],
-          ].map(([key, label]) => (
-            <button key={key} className={tab === key ? 'on' : ''} onClick={() => changeTab(key)}>{label}</button>
-          ))}
-        </nav>
-        {tab !== 'report' && (
+        {activeSection === 'dashboard' && <AdminDashboard supabase={supabase} profile={profile} />}
+        {activeSection === 'reports' && <AdminReports supabase={supabase} profile={profile} />}
+        {['schools', 'students', 'entry', 'summary'].includes(activeSection) && (
           <>
         <div className="card row manager-selectors">
           <label>શાળા
             <select value={schoolId} onChange={(event) => {
               if (entryDirty && !window.confirm('ન સાચવેલા ફેરફાર છે. બીજી શાળા પસંદ કરશો?')) return;
+              setEntryDirty(false);
               setSchoolId(event.target.value);
             }}>
               {schools.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
@@ -120,18 +113,23 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
           <span className="muted">શાળાઓ {schools.length ? schoolPage * 100 + 1 : 0}–{Math.min((schoolPage + 1) * 100, schoolCount)} / {schoolCount.toLocaleString()}</span>
           <button disabled={(schoolPage + 1) * 100 >= schoolCount} onClick={() => changeSchoolPage(schoolPage + 1)}>આગળનું પાનું</button>
         </div>
+        {activeSection === 'schools' && school && (
+          <section className="card">
+            <h3>{school.name} · {school.code}</h3>
+            <p className="muted">{school.district} › {school.block} · {school.cluster || ''}</p>
+            <SchoolYearReportButton supabase={supabase} school={school} />
+          </section>
+        )}
           </>
         )}
-        {tab === 'report' && <><AdminDashboard supabase={supabase} profile={profile} /><AdminReports supabase={supabase} profile={profile} /></>}
-        {school && tab === 'students' && <Students supabase={supabase} school={school} />}
-        {school && tab === 'entry' && (
+        {school && activeSection === 'students' && <Students supabase={supabase} school={school} />}
+        {school && activeSection === 'entry' && (
           <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />
         )}
-        {school && tab === 'summary' && (
+        {school && activeSection === 'summary' && (
           <Summary supabase={supabase} school={school} dhoran={dhoran} month={month} />
         )}
         {schoolsLoaded && !schools.length && !error && <p className="muted">આ વિસ્તાર માટે કોઈ સક્રિય શાળા મળી નથી.</p>}
-      </main>
-    </div>
+    </DashboardLayout>
   );
 }

@@ -75,8 +75,12 @@ function resetOutcomeUnknown(message) {
   return !status || (status >= 500 && status !== 503);
 }
 
-export default function AdminScopedAccountManagement({ supabase }) {
-  const [accountType, setAccountType] = useState('district');
+export default function AdminScopedAccountManagement({
+  supabase,
+  initialAccountType = 'district',
+  onCredentialsVisibilityChange,
+}) {
+  const [accountType, setAccountType] = useState(initialAccountType);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
@@ -125,6 +129,12 @@ export default function AdminScopedAccountManagement({ supabase }) {
   useEffect(() => {
     setSelected({});
   }, [accountType, page, appliedFilters]);
+
+  useEffect(() => {
+    onCredentialsVisibilityChange?.(credentials.some((result) => result.temporaryPassword));
+  }, [credentials, onCredentialsVisibilityChange]);
+
+  useEffect(() => () => onCredentialsVisibilityChange?.(false), [onCredentialsVisibilityChange]);
 
   useEffect(() => {
     if (!credentials.some((result) => result.temporaryPassword)) return undefined;

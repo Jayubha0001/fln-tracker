@@ -46,7 +46,7 @@ export default function AdminDashboard({ supabase, profile }) {
   const [q, setQ] = useState('');
   const reqId = useRef(0);
 
-  const minDepth = profile?.role === 'district' ? 1 : profile?.role === 'block' ? 2 : 0;
+  const minDepth = profile?.role === 'district' ? 1 : profile?.role === 'block' ? 2 : profile?.role === 'school' ? 3 : 0;
   const level = !scope.district ? 'district' : !scope.block ? 'block' : 'school';
   const dhoran = grade || null;
 

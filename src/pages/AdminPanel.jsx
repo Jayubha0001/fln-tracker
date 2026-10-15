@@ -8,6 +8,7 @@ import AdminReports from './AdminReports.jsx';
 import AdminDashboard from './AdminDashboard.jsx';
 import AdminSchoolImport from './AdminSchoolImport.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
+import DashboardLayout from '../components/DashboardLayout.jsx';
 
 const emptySchool = {
   district: '',
@@ -29,10 +30,14 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [workspaceEntryDirty, setWorkspaceEntryDirty] = useState(false);
+  const [credentialsVisible, setCredentialsVisible] = useState(false);
+  const [activeSection, setActiveSection] = useState('dashboard');
 
   function signOutSafely() {
     if (workspaceEntryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. સાચવ્યા વગર લૉગઆઉટ કરશો?')) return;
+    if (credentialsVisible && !window.confirm('One-time credentials panel બંધ કરશો? Copy/download કર્યા ન હોય તો password ફરી જોઈ શકાશે નહીં.')) return;
     setWorkspaceEntryDirty(false);
+    setCredentialsVisible(false);
     onSignOut();
   }
 
@@ -82,92 +87,103 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
     }
   }
 
+  function navigate(nextSection) {
+    if (workspaceEntryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. સાચવ્યા વગર આગળ વધશો?')) return false;
+    if (credentialsVisible && !window.confirm('One-time credentials panel છોડશો? Copy/download કર્યા ન હોય તો password ફરી જોઈ શકાશે નહીં.')) return false;
+    setWorkspaceEntryDirty(false);
+    setCredentialsVisible(false);
+    setActiveSection(nextSection);
+    return true;
+  }
+
+  const workspaceSections = ['student-management', 'entry', 'summary'];
+  const workspaceTab = {
+    'student-management': 'students',
+    entry: 'entry',
+    summary: 'summary',
+  }[activeSection];
+
   return (
-    <div className="app">
-      <header className="no-print">
-        <div className="row between">
-          <div>
-            <h1>Admin Panel – FLN Tracker</h1>
-            <span className="muted">{profile.email}</span>
-          </div>
-          <button onClick={signOutSafely}>લૉગઆઉટ</button>
-        </div>
-      </header>
-      <main>
-        <AdminDashboard supabase={supabase} profile={profile} />
-
-        <div className="admin-tools">
-          <div className="dash-hero slim">
-            <div><small>ADMIN</small><h2>Admin Tools</h2></div>
-            {error && <p className="error" role="alert">{error}</p>}
-            {message && <p className="success" role="status">{message}</p>}
-          </div>
-          <ToolPanel icon="🔐" title="Login & Password Management" hint="District · Block · School accounts" defaultOpen>
-            <AdminScopedAccountManagement supabase={supabase} />
-          </ToolPanel>
-          <ToolPanel icon="🧒" title="વિદ્યાર્થી Import" hint="Excel / CSV">
-            <AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} />
-          </ToolPanel>
-          <ToolPanel icon="🏫" title="શાળા Import / Add" hint="Excel / CSV">
-            <AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} />
-          </ToolPanel>
-          <ToolPanel icon="📝" title="શાળા અને વિદ્યાર્થી Workspace" hint="Admin તરીકે entry / report">
-        <section className="card">
-          <h3>શાળા અને વિદ્યાર્થી workspace</h3>
-          <p className="muted">Workspace dropdown માટે શાળાઓ પાનાં પ્રમાણે લોડ થાય છે. Login, edit અને report actions ઉપરના Central Login &amp; Password Managementમાં છે.</p>
-          <div className="row between">
-            <button type="button" disabled={schoolPage <= 0 || busy} onClick={() => setSchoolPage((value) => value - 1)}>પાછળનું school page</button>
-            <span className="muted">પાનું {schoolPageCount ? schoolPage + 1 : 0}/{schoolPageCount}</span>
-            <button type="button" disabled={!schoolPageCount || schoolPage + 1 >= schoolPageCount || busy} onClick={() => setSchoolPage((value) => value + 1)}>આગળનું school page</button>
-          </div>
-        </section>
-        <AdminSchoolWorkspace supabase={supabase} schools={schools} onEntryDirtyChange={setWorkspaceEntryDirty} />
-          </ToolPanel>
-          <ToolPanel icon="➕" title="નવી શાળા ઉમેરો" hint="એક શાળા manual">
-        <form className="card" onSubmit={saveSchool}>
-          <h3>નવી શાળા ઉમેરો</h3>
-          <label>જિલ્લો<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
-          <label>
-            તાલુકો પસંદ કરો અથવા નવો દાખલ કરો
-            <input
-              required
-              list="fln-taluka-options"
-              value={form.block}
-              onChange={(e) => setForm({ ...form, block: e.target.value })}
-            />
-            <datalist id="fln-taluka-options">
-              {[...new Set(schools.map((school) => school.block.trim()).filter(Boolean))].map((block) => (
-                <option key={block} value={block} />
-              ))}
-            </datalist>
-          </label>
-          <label>ક્લસ્ટર<input value={form.cluster} onChange={(e) => setForm({ ...form, cluster: e.target.value })} /></label>
-          <label>
-            શાળા કોડ / School ID
-            <input
-              required
-              value={form.code}
-              onChange={(e) => setForm({ ...form, code: e.target.value })}
-            />
-          </label>
-          <label>શાળાનું નામ<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-          <div className="row">
-            <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
-            <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો</button>
-          </div>
-        </form>
-          </ToolPanel>
-        </div>
-
-        <AdminReports supabase={supabase} profile={{ role: 'admin' }} />
-      </main>
-    </div>
+    <DashboardLayout
+      role="admin"
+      activeSection={activeSection}
+      onNavigate={navigate}
+      onLogout={signOutSafely}
+      context={`Administrator · ${profile.email}`}
+    >
+      {error && <p className="error" role="alert">{error}</p>}
+      {message && <p className="success" role="status">{message}</p>}
+      {activeSection === 'dashboard' && <AdminDashboard supabase={supabase} profile={profile} />}
+      {activeSection === 'reports' && <AdminReports supabase={supabase} profile={{ role: 'admin' }} />}
+      {activeSection === 'accounts' && (
+        <AdminScopedAccountManagement supabase={supabase} onCredentialsVisibilityChange={setCredentialsVisible} />
+      )}
+      {activeSection === 'school-management' && (
+        <>
+          <p className="muted">શાળા વિગતો, School ID, account actions અને વાર્ષિક report અહીં School Logins ટેબમાં ઉપલબ્ધ છે.</p>
+          <AdminScopedAccountManagement
+            key={activeSection}
+            supabase={supabase}
+            initialAccountType="school"
+            onCredentialsVisibilityChange={setCredentialsVisible}
+          />
+        </>
+      )}
+      {activeSection === 'school-import' && (
+        <>
+          <AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} />
+          <form className="card" onSubmit={saveSchool}>
+            <h3>નવી શાળા ઉમેરો</h3>
+            <label>જિલ્લો<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
+            <label>
+              તાલુકો પસંદ કરો અથવા નવો દાખલ કરો
+              <input required list="fln-taluka-options" value={form.block} onChange={(e) => setForm({ ...form, block: e.target.value })} />
+              <datalist id="fln-taluka-options">
+                {[...new Set(schools.map((school) => school.block.trim()).filter(Boolean))].map((block) => (
+                  <option key={block} value={block} />
+                ))}
+              </datalist>
+            </label>
+            <label>ક્લસ્ટર<input value={form.cluster} onChange={(e) => setForm({ ...form, cluster: e.target.value })} /></label>
+            <label>શાળા કોડ / School ID<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></label>
+            <label>શાળાનું નામ<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+            <div className="row">
+              <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
+              <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો</button>
+            </div>
+          </form>
+        </>
+      )}
+      {activeSection === 'student-import' && (
+        <AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} />
+      )}
+      {workspaceSections.includes(activeSection) && (
+        <>
+          <section className="card">
+            <h3>શાળા અને વિદ્યાર્થી Workspace</h3>
+            <p className="muted">શાળા પાનાં પ્રમાણે લોડ થાય છે. School ID અને હાલની student/entry જોડાણો જાળવાય છે.</p>
+            <div className="row between">
+              <button type="button" disabled={schoolPage <= 0 || busy} onClick={() => setSchoolPage((value) => value - 1)}>પાછળનું school page</button>
+              <span className="muted">પાનું {schoolPageCount ? schoolPage + 1 : 0}/{schoolPageCount}</span>
+              <button type="button" disabled={!schoolPageCount || schoolPage + 1 >= schoolPageCount || busy} onClick={() => setSchoolPage((value) => value + 1)}>આગળનું school page</button>
+            </div>
+          </section>
+          <AdminSchoolWorkspace
+            key={activeSection}
+            supabase={supabase}
+            schools={schools}
+            onEntryDirtyChange={setWorkspaceEntryDirty}
+            initialTab={workspaceTab}
+          />
+        </>
+      )}
+    </DashboardLayout>
   );
 }
 
-function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange }) {
+function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTab = 'students' }) {
   const [schoolId, setSchoolId] = useState('');
-  const [tab, setTab] = useState('students');
+  const [tab, setTab] = useState(initialTab);
   const [dhoran, setDhoran] = useState('1');
   const [month, setMonth] = useState(MONTHS[0].key);
   const [entryDirty, setEntryDirty] = useState(false);
@@ -230,14 +246,5 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange }) {
         </>
       )}
     </section>
-  );
-}
-
-function ToolPanel({ icon, title, hint, defaultOpen = false, children }) {
-  return (
-    <details className="tool" open={defaultOpen}>
-      <summary><span className="tool-ico">{icon}</span><b>{title}</b><small>{hint}</small><i className="tool-chev">▾</i></summary>
-      <div className="tool-body">{children}</div>
-    </details>
   );
 }

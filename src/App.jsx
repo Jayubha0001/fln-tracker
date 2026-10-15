@@ -9,6 +9,7 @@ import SchoolSummary from './pages/SchoolSummary.jsx';
 import ChangePassword from './pages/ChangePassword.jsx';
 import ScopedDashboard from './pages/ScopedDashboard.jsx';
 import SchoolYearReportButton from './components/SchoolYearReportButton.jsx';
+import DashboardLayout from './components/DashboardLayout.jsx';
 
 const nowKey = new Date().toISOString().slice(0, 7);
 
@@ -195,7 +196,7 @@ export default function App() {
 }
 
 function SchoolTracker({ supabase, school, onSignOut }) {
-  const [tab, setTab] = useState('entry');
+  const [tab, setTab] = useState('dashboard');
   const [dhoran, setDhoran] = useState('1');
   const [entryDirty, setEntryDirty] = useState(false);
   const [month, setMonth] = useState(
@@ -212,40 +213,36 @@ function SchoolTracker({ supabase, school, onSignOut }) {
   }
 
   return (
-    <div className="app">
-      <header className="no-print school-hero">
-        <div className="row between">
-          <div>
-            <small>NIPUN GUJARAT · FLN ગણિત ટ્રેકર 2026/27</small>
-            <h1>{school.name}</h1>
-            <small>{school.district} › {school.block} › {school.cluster} · Login ID: {school.code}</small>
-          </div>
-          <button onClick={() => leaveEntry(onSignOut)}>લૉગઆઉટ</button>
-        </div>
-        <div className="school-pick">
+    <DashboardLayout
+      role="school"
+      activeSection={tab}
+      onNavigate={(nextTab) => leaveEntry(() => setTab(nextTab))}
+      onLogout={() => leaveEntry(onSignOut)}
+      context={`${school.district} › ${school.block} › ${school.name} · ${school.code}`}
+    >
+        <div className="card row manager-selectors">
           <div className="chips">
             {Object.entries(CLASSES).map(([key, item]) => (
               <button key={key} className={dhoran === key ? 'on' : ''} onClick={() => leaveEntry(() => setDhoran(key))}>{item.label}</button>
             ))}
           </div>
-          <select aria-label="માસ" value={month} onChange={(e) => leaveEntry(() => setMonth(e.target.value))}>
-            {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-          </select>
+          <label>માસ
+            <select aria-label="માસ" value={month} onChange={(e) => leaveEntry(() => setMonth(e.target.value))}>
+              {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
+          </label>
         </div>
-        <div className="school-tabs">
-          <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>✏️ એન્ટ્રી</button>
-          <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>📊 સારાંશ</button>
-          <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>🧒 વિદ્યાર્થી</button>
-        </div>
-        <div className="row">
-          <SchoolYearReportButton supabase={supabase} school={school} />
-        </div>
-      </header>
-      <main>
+        {tab === 'dashboard' && <AdminDashboard supabase={supabase} profile={{ role: 'school' }} />}
         {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
         {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />}
         {tab === 'summary' && <SchoolSummary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
-      </main>
-    </div>
+        {tab === 'annual-report' && (
+          <section className="card">
+            <h2>વાર્ષિક શાળા FLN Report</h2>
+            <p className="muted">{school.name} · {school.code}</p>
+            <SchoolYearReportButton supabase={supabase} school={school} />
+          </section>
+        )}
+    </DashboardLayout>
   );
 }
