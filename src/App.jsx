@@ -5,7 +5,7 @@ import Login from './pages/Login.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 import Students from './pages/Students.jsx';
 import Entry from './pages/Entry.jsx';
-import Summary from './pages/Summary.jsx';
+import SchoolSummary from './pages/SchoolSummary.jsx';
 import ChangePassword from './pages/ChangePassword.jsx';
 import ScopedDashboard from './pages/ScopedDashboard.jsx';
 import SchoolYearReportButton from './components/SchoolYearReportButton.jsx';
@@ -213,35 +213,30 @@ function SchoolTracker({ supabase, school, onSignOut }) {
 
   return (
     <div className="app">
-      <header className="no-print">
+      <header className="no-print school-hero">
         <div className="row between">
           <div>
-            <h1>ગણિત ટ્રેકર – FLN</h1>
-            <div className="school">
-              <b>{school.name}</b> · {school.code}<br />
-              {school.district} › {school.block} › {school.cluster}
-              <br /><small>Login ID: {school.code}</small>
-            </div>
+            <small>NIPUN GUJARAT · FLN ગણિત ટ્રેકર 2026/27</small>
+            <h1>{school.name}</h1>
+            <small>{school.district} › {school.block} › {school.cluster} · Login ID: {school.code}</small>
           </div>
           <button onClick={() => leaveEntry(onSignOut)}>લૉગઆઉટ</button>
         </div>
-        <div className="row">
-          <select aria-label="ધોરણ" value={dhoran} onChange={(e) => leaveEntry(() => setDhoran(e.target.value))}>
+        <div className="school-pick">
+          <div className="chips">
             {Object.entries(CLASSES).map(([key, item]) => (
-              <option key={key} value={key}>{item.label}</option>
+              <button key={key} className={dhoran === key ? 'on' : ''} onClick={() => leaveEntry(() => setDhoran(key))}>{item.label}</button>
             ))}
-          </select>
+          </div>
           <select aria-label="માસ" value={month} onChange={(e) => leaveEntry(() => setMonth(e.target.value))}>
-            {MONTHS.map((item) => (
-              <option key={item.key} value={item.key}>{item.label}</option>
-            ))}
+            {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
         </div>
-        <nav>
-          <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>વિદ્યાર્થી</button>
-          <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>એન્ટ્રી</button>
-          <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>સારાંશ</button>
-        </nav>
+        <div className="school-tabs">
+          <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>✏️ એન્ટ્રી</button>
+          <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>📊 સારાંશ</button>
+          <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>🧒 વિદ્યાર્થી</button>
+        </div>
         <div className="row">
           <SchoolYearReportButton supabase={supabase} school={school} />
         </div>
@@ -249,7 +244,7 @@ function SchoolTracker({ supabase, school, onSignOut }) {
       <main>
         {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
         {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />}
-        {tab === 'summary' && <Summary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
+        {tab === 'summary' && <SchoolSummary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
       </main>
     </div>
   );

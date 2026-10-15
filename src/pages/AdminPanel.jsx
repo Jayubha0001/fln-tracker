@@ -5,7 +5,7 @@ import Entry from './Entry.jsx';
 import Summary from './Summary.jsx';
 import AdminStudentImport from './AdminStudentImport.jsx';
 import AdminReports from './AdminReports.jsx';
-import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
+import AdminDashboard from './AdminDashboard.jsx';
 import AdminSchoolImport from './AdminSchoolImport.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 
@@ -24,9 +24,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
   const [schoolPage, setSchoolPage] = useState(0);
   const [schoolPageCount, setSchoolPageCount] = useState(0);
   const schoolPageSize = 100;
-  const [accounts, setAccounts] = useState({});
   const [form, setForm] = useState(emptySchool);
-  const [editingId, setEditingId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -45,13 +43,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
       .order('district').order('block').order('name')
       .range(from, from + schoolPageSize - 1);
     if (schoolError) throw schoolError;
-    const schoolIds = (schoolRows || []).map((school) => school.id);
-    const { data: profileRows, error: profileError } = schoolIds.length
-      ? await supabase.from('profiles').select('school_id').eq('role', 'school').in('school_id', schoolIds)
-      : { data: [], error: null };
-    if (profileError) throw profileError;
     setSchools(schoolRows || []);
-    setAccounts(Object.fromEntries((profileRows || []).map((row) => [row.school_id, true])));
     setSchoolPageCount(Math.ceil((count || 0) / schoolPageSize));
     setSchoolsLoaded(true);
   }
@@ -60,22 +52,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
     loadSchools().catch((cause) => setError(`શાળાઓ લોડ થઈ શકી નથી: ${cause.message}`));
   }, [supabase, schoolPage]);
 
-  function startEdit(school) {
-    setEditingId(school.id);
-    setForm({
-      district: school.district,
-      block: school.block,
-      cluster: school.cluster,
-      code: school.code,
-      name: school.name,
-      active: school.active,
-    });
-    setError('');
-    setMessage('');
-  }
-
   function clearForm() {
-    setEditingId(null);
     setForm(emptySchool);
   }
 
@@ -87,17 +64,15 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
     const payload = Object.fromEntries(
       Object.entries(form).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])
     );
-    if ((!editingId || !accounts[editingId]) && !/^\d{11}$/.test(payload.code)) {
+    if (!/^\d{11}$/.test(payload.code)) {
       setError('School Code / Login ID 11 અંકનો હોવો જોઈએ.');
       setBusy(false);
       return;
     }
     try {
-      const result = editingId
-        ? await supabase.from('schools').update(payload).eq('id', editingId)
-        : await supabase.from('schools').insert(payload);
+      const result = await supabase.from('schools').insert(payload);
       if (result.error) throw result.error;
-      setMessage(editingId ? 'શાળાની વિગતો અપડેટ થઈ.' : 'શાળા ઉમેરાઈ.');
+      setMessage('શાળા ઉમેરાઈ.');
       clearForm();
       await loadSchools();
     } catch (cause) {
@@ -119,20 +94,38 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
         </div>
       </header>
       <main>
-        <h2>તાલુકાવાર શાળાઓ (પાનું {Math.min(schoolPage + 1, schoolPageCount)}/{schoolPageCount})</h2>
-        {error && <p className="error" role="alert">{error}</p>}
-        {message && <p className="success" role="status">{message}</p>}
-        <AdminScopedAccountManagement supabase={supabase} />
+        <AdminDashboard supabase={supabase} profile={profile} />
 
-        <AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} />
-        <AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} />
-
-        <AdminReports supabase={supabase} />
-
+        <div className="admin-tools">
+          <div className="dash-hero slim">
+            <div><small>ADMIN</small><h2>Admin Tools</h2></div>
+            {error && <p className="error" role="alert">{error}</p>}
+            {message && <p className="success" role="status">{message}</p>}
+          </div>
+          <ToolPanel icon="🔐" title="Login & Password Management" hint="District · Block · School accounts" defaultOpen>
+            <AdminScopedAccountManagement supabase={supabase} />
+          </ToolPanel>
+          <ToolPanel icon="🧒" title="વિદ્યાર્થી Import" hint="Excel / CSV">
+            <AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} />
+          </ToolPanel>
+          <ToolPanel icon="🏫" title="શાળા Import / Add" hint="Excel / CSV">
+            <AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} />
+          </ToolPanel>
+          <ToolPanel icon="📝" title="શાળા અને વિદ્યાર્થી Workspace" hint="Admin તરીકે entry / report">
+        <section className="card">
+          <h3>શાળા અને વિદ્યાર્થી workspace</h3>
+          <p className="muted">Workspace dropdown માટે શાળાઓ પાનાં પ્રમાણે લોડ થાય છે. Login, edit અને report actions ઉપરના Central Login &amp; Password Managementમાં છે.</p>
+          <div className="row between">
+            <button type="button" disabled={schoolPage <= 0 || busy} onClick={() => setSchoolPage((value) => value - 1)}>પાછળનું school page</button>
+            <span className="muted">પાનું {schoolPageCount ? schoolPage + 1 : 0}/{schoolPageCount}</span>
+            <button type="button" disabled={!schoolPageCount || schoolPage + 1 >= schoolPageCount || busy} onClick={() => setSchoolPage((value) => value + 1)}>આગળનું school page</button>
+          </div>
+        </section>
         <AdminSchoolWorkspace supabase={supabase} schools={schools} onEntryDirtyChange={setWorkspaceEntryDirty} />
-
+          </ToolPanel>
+          <ToolPanel icon="➕" title="નવી શાળા ઉમેરો" hint="એક શાળા manual">
         <form className="card" onSubmit={saveSchool}>
-          <h3>{editingId ? 'શાળાની વિગતો બદલો' : 'નવી શાળા ઉમેરો'}</h3>
+          <h3>નવી શાળા ઉમેરો</h3>
           <label>જિલ્લો<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
           <label>
             તાલુકો પસંદ કરો અથવા નવો દાખલ કરો
@@ -153,51 +146,20 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
             શાળા કોડ / School ID
             <input
               required
-              disabled={Boolean(editingId && accounts[editingId])}
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
             />
           </label>
           <label>શાળાનું નામ<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-          {editingId && (
-            <label className="check-label">
-              <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
-              સક્રિય
-            </label>
-          )}
           <div className="row">
-            <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : editingId ? 'અપડેટ કરો' : 'શાળા ઉમેરો'}</button>
-            {editingId && <button type="button" onClick={clearForm}>રદ કરો</button>}
+            <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
+            <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો</button>
           </div>
         </form>
-
-        {!schools.length ? (
-          <p className="muted">હજુ કોઈ શાળા ઉમેરાઈ નથી.</p>
-        ) : (
-          <ul className="list school-list">
-            {schools.map((school) => (
-              <li key={school.id} className="school-card">
-                <div>
-                  <b>{school.name}</b> · {school.code}
-                  <div className="muted">{school.district} › {school.block} › {school.cluster || '—'}</div>
-                  <div className={school.active ? 'success' : 'muted'}>
-                    {school.active ? 'સક્રિય' : 'નિષ્ક્રિય'}
-                    {accounts[school.id] ? ` · Login ID: ${school.code}` : ' · Login account નથી'}
-                  </div>
-                </div>
-                <div className="row school-actions">
-                  <button onClick={() => startEdit(school)}>સંપાદિત કરો</button>
-                  {school.active && <SchoolYearReportButton supabase={supabase} school={school} />}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="row between">
-          <button disabled={schoolPage <= 0 || busy} onClick={() => setSchoolPage((value) => value - 1)}>પાછળનું પાનું</button>
-          <span className="muted">શાળાઓ એક સમયે {schoolPageSize} જ લોડ થાય છે.</span>
-          <button disabled={!schoolPageCount || schoolPage + 1 >= schoolPageCount || busy} onClick={() => setSchoolPage((value) => value + 1)}>આગળનું પાનું</button>
+          </ToolPanel>
         </div>
+
+        <AdminReports supabase={supabase} profile={{ role: 'admin' }} />
       </main>
     </div>
   );
@@ -222,7 +184,7 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange }) {
 
   return (
     <section className="card">
-      <h3>શાળા અને વિદ્યાર્થી Management</h3>
+      <h3>Student અને Assessment Workspace</h3>
       <label>
         શાળા પસંદ કરો
         <select value={schoolId} onChange={(event) => leaveEntry(() => setSchoolId(event.target.value))}>
@@ -268,5 +230,14 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange }) {
         </>
       )}
     </section>
+  );
+}
+
+function ToolPanel({ icon, title, hint, defaultOpen = false, children }) {
+  return (
+    <details className="tool" open={defaultOpen}>
+      <summary><span className="tool-ico">{icon}</span><b>{title}</b><small>{hint}</small><i className="tool-chev">▾</i></summary>
+      <div className="tool-body">{children}</div>
+    </details>
   );
 }

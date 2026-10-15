@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  accountListResponse,
   accountListError,
   accountStatus,
   isActiveAdmin,
@@ -10,6 +11,21 @@ import {
   scopedAccountKey,
   validScopedTarget,
 } from '../supabase/functions/_shared/scopedAccountManagement.js';
+
+test('returns the canonical login-list response contract even for empty pages', () => {
+  assert.deepEqual(accountListResponse([], 0, 1, 50), {
+    accounts: [],
+    total: 0,
+    page: 1,
+    pageSize: 50,
+  });
+  assert.deepEqual(accountListResponse([{ loginId: '2428' }], 1, 2, 50), {
+    accounts: [{ loginId: '2428' }],
+    total: 1,
+    page: 2,
+    pageSize: 50,
+  });
+});
 
 test('reports missing login-list RPC/schema objects with actionable HTTP 503 diagnostics', () => {
   const result = accountListError({

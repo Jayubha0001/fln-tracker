@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCredentialsCsv, confirmedCredential, mergeCredentials } from '../src/lib/accountCredentials.js';
+import * as XLSX from '@e965/xlsx';
+import {
+  accountOperationResult,
+  buildCredentialsWorkbook,
+  confirmedCredential,
+  CREDENTIAL_EXCEL_HEADERS,
+} from '../src/lib/accountCredentials.js';
 import { isActiveAdmin, isSupportedAccountType } from '../supabase/functions/_shared/scopedAccountManagement.js';
 
 const accountTypes = [
@@ -40,29 +46,74 @@ test('never returns a credential for failed, mismatched or unknown reset outcome
   }, 'other'), null);
 });
 
-test('escapes CSV delimiters, quotes, newlines and spreadsheet formula prefixes', () => {
-  const csv = buildCredentialsCsv([{
+test('exports an Excel workbook with the required columns and blank passwords for unsuccessful operations', () => {
+  const workbook = buildCredentialsWorkbook([
+    {
+      accountType: 'school',
+      districtName: 'District',
+      districtCode: '2428',
+      blockName: 'Block',
+      blockCode: '242801',
+      schoolName: 'School',
+      schoolId: '24280100001',
+      loginId: '24280100001',
+      temporaryPassword: 'TempPass!123',
+      generatedAt: '2026-10-15T00:00:00.000Z',
+      status: 'Password Change Required',
+    },
+    accountOperationResult(accountTypes[2], '', 'Reset failed', '2026-10-15T00:01:00.000Z'),
+  ]);
+  const bytes = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const parsed = XLSX.read(bytes, { type: 'buffer' });
+  const rows = XLSX.utils.sheet_to_json(parsed.Sheets.Credentials, { header: 1 });
+  assert.deepEqual(rows[0], CREDENTIAL_EXCEL_HEADERS);
+  assert.equal(rows[1][8], 'TempPass!123');
+  assert.equal(rows[2][8], '');
+  assert.equal(rows[2][10], 'Reset failed');
+});
+
+test('keeps only returned temporary passwords and does not invent credentials for failed operations', () => {
+  const account = accountTypes[2];
+  const result = accountOperationResult(account, '', 'Reset failed');
+  assert.equal(result.temporaryPassword, '');
+  assert.equal(confirmedCredential(account, {
+    loginId: account.loginId,
+    schoolCode: account.loginId,
+    mustChangePassword: true,
+  }, 'reset'), null);
+});
+
+test('confirms a reset credential only when the server confirms it and requires password change', () => {
+  const account = accountTypes[0];
+  const credential = confirmedCredential(account, {
+    role: 'district',
+    loginId: account.loginId,
+    temporaryPassword: 'server-returned-only',
+    mustChangePassword: true,
+  }, 'reset');
+  assert.equal(credential.temporaryPassword, 'server-returned-only');
+  assert.equal(credential.status, 'Password Change Required');
+  assert.equal(confirmedCredential(account, {
+    role: 'district',
+    loginId: account.loginId,
+    temporaryPassword: 'unconfirmed',
+    mustChangePassword: false,
+  }, 'reset'), null);
+});
+
+test('keeps generated passwords out of unsuccessful Excel rows', () => {
+  const failed = accountOperationResult({
     accountType: 'school',
+    loginId: '24280100001',
     districtName: '=2+2',
     districtCode: '2428',
     blockName: 'Block, "North"',
     blockCode: '242801',
     schoolName: 'Line 1\nLine 2',
-    schoolId: '24280100001',
-    loginId: '24280100001',
-    temporaryPassword: 'p,"ass',
-    accountStatus: 'Password Change Required',
-    generatedAt: '2026-10-15T00:00:00.000Z',
-  }]);
-  assert.match(csv, /^"Account Type","District Name","District Code"/);
-  assert.match(csv, /"'=2\+2"/);
-  assert.match(csv, /"Block, ""North"""/);
-  assert.match(csv, /"Line 1\nLine 2"/);
-  assert.match(csv, /"p,""ass"/);
-});
-
-test('replaces an older temporary credential for the same account after a later reset', () => {
-  const oldCredential = { accountType: 'school', loginId: 'school-a', temporaryPassword: 'old' };
-  const newCredential = { ...oldCredential, temporaryPassword: 'new' };
-  assert.deepEqual(mergeCredentials([oldCredential], [newCredential]), [newCredential]);
+  }, null, 'Reset failed', '2026-10-15T00:00:00.000Z');
+  assert.equal(failed.temporaryPassword, '');
+  const worksheet = buildCredentialsWorkbook([failed]).Sheets.Credentials;
+  assert.equal(worksheet.B2.v, '=2+2');
+  assert.equal(worksheet.B2.f, undefined);
+  assert.equal(worksheet.I2.v, '');
 });

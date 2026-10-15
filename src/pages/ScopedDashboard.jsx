@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { CLASSES, MONTHS } from '../lib/category';
 import AdminReports from './AdminReports.jsx';
+import AdminDashboard from './AdminDashboard.jsx';
 import Entry from './Entry.jsx';
 import Students from './Students.jsx';
 import Summary from './Summary.jsx';
-import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 
 export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
@@ -83,6 +83,18 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
       </header>
       <main>
         {error && <p className="error" role="alert">{error}</p>}
+        <nav>
+          {[
+            ['report', isDistrict ? 'District report' : 'Block report'],
+            ['students', 'વિદ્યાર્થી'],
+            ['entry', 'એન્ટ્રી'],
+            ['summary', 'સારાંશ'],
+          ].map(([key, label]) => (
+            <button key={key} className={tab === key ? 'on' : ''} onClick={() => changeTab(key)}>{label}</button>
+          ))}
+        </nav>
+        {tab !== 'report' && (
+          <>
         <div className="card row manager-selectors">
           <label>શાળા
             <select value={schoolId} onChange={(event) => {
@@ -102,24 +114,15 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
               {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
           </label>
-          {school && <SchoolYearReportButton supabase={supabase} school={school} />}
         </div>
         <div className="row between">
           <button disabled={schoolPage <= 0} onClick={() => changeSchoolPage(schoolPage - 1)}>પાછળનું પાનું</button>
           <span className="muted">શાળાઓ {schools.length ? schoolPage * 100 + 1 : 0}–{Math.min((schoolPage + 1) * 100, schoolCount)} / {schoolCount.toLocaleString()}</span>
           <button disabled={(schoolPage + 1) * 100 >= schoolCount} onClick={() => changeSchoolPage(schoolPage + 1)}>આગળનું પાનું</button>
         </div>
-        <nav>
-          {[
-            ['report', 'દિવસવાર / તમામ શાળા Report'],
-            ['students', 'વિદ્યાર્થી'],
-            ['entry', 'એન્ટ્રી'],
-            ['summary', 'સારાંશ'],
-          ].map(([key, label]) => (
-            <button key={key} className={tab === key ? 'on' : ''} onClick={() => changeTab(key)}>{label}</button>
-          ))}
-        </nav>
-        {tab === 'report' && <AdminReports supabase={supabase} />}
+          </>
+        )}
+        {tab === 'report' && <><AdminDashboard supabase={supabase} profile={profile} /><AdminReports supabase={supabase} profile={profile} /></>}
         {school && tab === 'students' && <Students supabase={supabase} school={school} />}
         {school && tab === 'entry' && (
           <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />

@@ -11,6 +11,10 @@ export function isSupportedAccountType(accountType) {
   return accountType === 'district' || accountType === 'block' || accountType === 'school';
 }
 
+export function accountListResponse(accounts, total, page, pageSize) {
+  return { accounts, total, page, pageSize };
+}
+
 export function accountListError(error) {
   const code = typeof error?.code === 'string' ? error.code : '';
   const message = typeof error?.message === 'string' ? error.message : 'Unknown database error';

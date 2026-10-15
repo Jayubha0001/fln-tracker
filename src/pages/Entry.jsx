@@ -8,6 +8,8 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   const [entries, setEntries] = useState(null);
   const [draft, setDraft] = useState({});
   const [view, setView] = useState('grid');
+  const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
   const [openId, setOpenId] = useState(null);
   const [error, setError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
@@ -187,13 +189,30 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
     }
   }
 
+  const liveStatus = (student) => calc(dhoran, visibleByStudent[student.id]?.answers);
+  const statuses = new Map(students.map((student) => [student.id, liveStatus(student)]));
+  const doneCount = students.filter((student) => statuses.get(student.id).cat).length;
+  const tri = { U: 0, P: 0, N: 0 };
+  students.forEach((student) => { const c = statuses.get(student.id).cat; if (c) tri[c] += 1; });
+  const shown = students.filter((student) => {
+    const st = statuses.get(student.id);
+    if (filter === 'todo' && st.cat) return false;
+    if (filter === 'done' && !st.cat) return false;
+    return !q || student.name.toLowerCase().includes(q.toLowerCase());
+  });
+
   return (
-    <div>
-      <div className="row between">
-        <span className="muted">પૂર્ણ એન્ટ્રી: {completed} / {students.length}{dirty ? ' · સાચવવાના ફેરફાર છે' : ''}</span>
-        <div className="seg">
-          <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}>ગ્રીડ</button>
-          <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>કાર્ડ</button>
+    <div className="entry-wrap">
+      <div className="entry-top">
+        <div className="entry-progress">
+          <div className="entry-progress-head">
+            <span><b>{doneCount}</b> / {students.length} વિદ્યાર્થી પૂર્ણ</span>
+            {dirty && <span className="entry-dirty">● સાચવવાના ફેરફાર છે</span>}
+          </div>
+          <div className="dash-bar big"><i className="n" style={{ width: `${students.length ? (doneCount / students.length) * 100 : 0}%` }} /></div>
+          <div className="entry-tri">
+            <span className="u">ઉદયમાન {tri.U}</span><span className="p">પ્રગતિશીલ {tri.P}</span><span className="n">નિપુણ {tri.N}</span>
+          </div>
         </div>
         <label className="assessment-date">
           મૂલ્યાંકન તારીખ
@@ -211,39 +230,110 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
         </label>
       </div>
 
-      {view === 'grid' ? (
-        <Grid
-          students={students}
-          byStudent={visibleByStudent}
-          dhoran={dhoran}
-          onChange={changeAnswers}
-          saving={saving}
-        />
-      ) : (
-        <ul className="list">
-          {students.map((student, index) => {
-            const status = calc(dhoran, byStudent[student.id]?.answers);
-            return (
-              <li key={student.id} onClick={() => setOpenId(student.id)} className="tap">
-                <span>{index + 1}. {student.name}</span>
-                {status.cat ? (
-                  <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label} ({status.yes}/{status.total})</span>
-                ) : (
-                  <span className="badge todo">{status.done ? `${status.done}/${status.total}` : 'બાકી'}</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+      <div className="entry-modes" role="tablist">
+        <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}><b>▦ ફોટો મુજબ ગ્રીડ</b><small>સૌથી ઝડપી · આખો વર્ગ</small></button>
+        <button className={view === 'skill' ? 'on' : ''} onClick={() => setView('skill')}><b>🎯 વિધાન પ્રમાણે</b><small>એક વિધાન, આખો વર્ગ</small></button>
+        <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}><b>👤 વિદ્યાર્થી પ્રમાણે</b><small>એક વિદ્યાર્થી, બધા વિધાન</small></button>
+      </div>
+
+      {view === 'grid' && (
+        <Grid students={students} byStudent={visibleByStudent} dhoran={dhoran} onChange={changeAnswers} saving={saving} />
+      )}
+      {view === 'skill' && (
+        <SkillView students={students} byStudent={visibleByStudent} dhoran={dhoran} onChange={changeAnswers} saving={saving} />
+      )}
+      {view === 'card' && (
+        <>
+          <div className="entry-filter">
+            <input placeholder="🔍 વિદ્યાર્થી શોધો…" value={q} onChange={(e) => setQ(e.target.value)} />
+            {[['all', 'બધા'], ['todo', 'બાકી'], ['done', 'પૂર્ણ']].map(([key, label]) => (
+              <button key={key} className={filter === key ? 'on' : ''} onClick={() => setFilter(key)}>{label}</button>
+            ))}
+          </div>
+          <ul className="stu-list">
+            {shown.map((student) => {
+              const index = students.indexOf(student);
+              const status = statuses.get(student.id);
+              return (
+                <li key={student.id} onClick={() => setOpenId(student.id)} className={`stu ${status.cat ? `c-${status.cat.toLowerCase()}` : ''}`}>
+                  <span className="stu-no">{index + 1}</span>
+                  <span className="stu-name">{student.name}
+                    <div className="dash-bar"><i className="n" style={{ width: `${(status.done / status.total) * 100}%` }} /></div>
+                  </span>
+                  {status.cat ? (
+                    <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label} · {status.yes}/{status.total}</span>
+                  ) : (
+                    <span className="badge todo">{status.done ? `${status.done}/${status.total}` : 'બાકી'}</span>
+                  )}
+                </li>
+              );
+            })}
+            {!shown.length && <li className="muted">કોઈ વિદ્યાર્થી મળ્યો નથી.</li>}
+          </ul>
+        </>
       )}
       <section className="entry-save no-print">
         <button className="primary" disabled={!dirty || saving} onClick={saveChanges}>
-          {saving ? 'સાચવાઈ રહ્યું છે…' : 'એન્ટ્રી સાચવો'}
+          {saving ? 'સાચવાઈ રહ્યું છે…' : '💾 એન્ટ્રી સાચવો'}
         </button>
         {savedMessage && <p className="success" role="status">{savedMessage}</p>}
         {error && <p className="error" role="alert">{error}</p>}
         <RowSaveErrors errors={rowErrors} />
       </section>
+    </div>
+  );
+}
+
+function SkillView({ students, byStudent, dhoran, onChange, saving }) {
+  const list = STATEMENTS[dhoran];
+  const [idx, setIdx] = useState(0);
+  const st = list[idx];
+  const val = (student) => byStudent[student.id]?.answers?.[st.n];
+  const set = (student, value) => {
+    const answers = { ...byStudent[student.id]?.answers };
+    if (answers[st.n] === value) delete answers[st.n]; else answers[st.n] = value;
+    onChange(student.id, answers);
+  };
+  const setAll = (value) => students.forEach((student) => {
+    onChange(student.id, { ...byStudent[student.id]?.answers, [st.n]: value });
+  });
+  const yes = students.filter((student) => val(student) === true).length;
+  const no = students.filter((student) => val(student) === false).length;
+  return (
+    <div className="skill-view">
+      <div className="skill-chips">
+        {list.map((item, i) => {
+          const n = students.filter((student) => byStudent[student.id]?.answers?.[item.n] !== undefined).length;
+          const cls = n === students.length ? 'full' : n ? 'part' : '';
+          return <button key={item.n} className={`${cls} ${i === idx ? 'on' : ''}`} onClick={() => setIdx(i)}>{i + 1}</button>;
+        })}
+      </div>
+      <div className={`skill-card lv-${st.level}`}>
+        <small>{st.area}{STEP[st.n] ? ` · પગલું ${STEP[st.n]}` : ''} · {LEVEL_LABEL[st.level]}</small>
+        <p><b>{idx + 1}.</b> {st.text}</p>
+        <div className="skill-count"><span className="y">હા {yes}</span><span className="n">ના {no}</span><span>બાકી {students.length - yes - no}</span></div>
+        <div className="row">
+          <button disabled={saving} onClick={() => setAll(true)}>બધા ✓</button>
+        </div>
+      </div>
+      <ul className="skill-students">
+        {students.map((student, i) => {
+          const v = val(student);
+          return (
+            <li key={student.id}>
+              <span>{i + 1}. {student.name}</span>
+              <div className="yn">
+                <button className={v === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(student, true)}>હા</button>
+                <button className={v === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(student, false)}>ના</button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="row sticky">
+        <button onClick={() => setIdx(Math.max(0, idx - 1))} disabled={idx === 0}>← પાછળ</button>
+        <button className="primary" onClick={() => setIdx(Math.min(list.length - 1, idx + 1))} disabled={idx === list.length - 1}>આગળનું વિધાન →</button>
+      </div>
     </div>
   );
 }
@@ -279,41 +369,94 @@ function groupBy(list, keyFn) {
 }
 
 function Grid({ students, byStudent, dhoran, onChange, saving }) {
-  const list = STATEMENTS[dhoran];
+  const full = STATEMENTS[dhoran];
+  const splitAt = full.findIndex((statement) => statement.area === 'સરવાળા');
+  const canSplit = full.length > 12 && splitAt > 0;
+  const [part, setPart] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [active, setActive] = useState(null);
+  const wrapRef = useRef(null);
+  const list = !canSplit || part === 'all' ? full : part === '1' ? full.slice(0, splitAt) : full.slice(splitAt);
+  const numOf = (statement) => full.findIndex((item) => item.n === statement.n) + 1;
   const areaGroups = groupBy(list, (statement) => statement.area);
   const classGroups = groupBy(list, (statement) => `${statement.area}|${statement.level}`);
+  const levels = [...new Set(list.map((statement) => statement.level))];
 
-  const cycle = (student, number) => {
+  useEffect(() => { setPart('all'); setActive(null); }, [dhoran]);
+  useEffect(() => {
+    wrapRef.current?.querySelector('td.act')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active]);
+
+  const setVal = (student, number, value) => {
     const answers = { ...byStudent[student.id]?.answers };
-    const value = answers[number];
-    if (value === undefined) answers[number] = true;
-    else if (value === true) answers[number] = false;
-    else delete answers[number];
+    if (value === undefined) delete answers[number]; else answers[number] = value;
     onChange(student.id, answers);
+  };
+  const cycle = (student, number) => {
+    const value = byStudent[student.id]?.answers?.[number];
+    setVal(student, number, value === undefined ? true : value === true ? false : undefined);
   };
   const allYes = (student) => onChange(
     student.id,
-    Object.fromEntries(list.map((statement) => [statement.n, true]))
+    Object.fromEntries(full.map((statement) => [statement.n, true]))
   );
+  const fillColumn = (number, value) => students.forEach((student) => setVal(student, number, value));
+
+  function advance(r, c) {
+    if (c < list.length - 1) return { r, c: c + 1 };
+    return { r: Math.min(students.length - 1, r + 1), c: 0 };
+  }
+  function onKey(event) {
+    if (!active || saving) return;
+    const { r, c } = active;
+    const student = students[r];
+    const statement = list[c];
+    let next = null;
+    switch (event.key) {
+      case 'ArrowRight': next = { r, c: Math.min(list.length - 1, c + 1) }; break;
+      case 'ArrowLeft': next = { r, c: Math.max(0, c - 1) }; break;
+      case 'ArrowDown': next = { r: Math.min(students.length - 1, r + 1), c }; break;
+      case 'ArrowUp': next = { r: Math.max(0, r - 1), c }; break;
+      case 'y': case 'Y': case '1': setVal(student, statement.n, true); next = advance(r, c); break;
+      case 'n': case 'N': case '0': setVal(student, statement.n, false); next = advance(r, c); break;
+      case 'Backspace': case 'Delete': setVal(student, statement.n, undefined); break;
+      case ' ': case 'Enter': cycle(student, statement.n); break;
+      default: return;
+    }
+    event.preventDefault();
+    if (next) setActive(next);
+  }
 
   return (
     <>
-      <p className="muted">ખાનામાં ટેપ કરો: ખાલી → ✓ (હા) → ✗ (ના) → ખાલી. વિધાનના નામ પર ટેપ કરો તો પૂરું લખાણ દેખાશે. "બધા ✓" દબાવી પછી જે ના હોય તે ટેપ કરો.</p>
+      <div className="grid-tools">
+        <div className="grid-legend">
+          {levels.map((level) => <span key={level} className={`lv-${level}`}>{LEVEL_LABEL[level]}</span>)}
+        </div>
+        {canSplit && (
+          <div className="seg">
+            <button className={part === 'all' ? 'on' : ''} onClick={() => setPart('all')}>બધા</button>
+            <button className={part === '1' ? 'on' : ''} onClick={() => setPart('1')}>ભાગ 1 (1–{splitAt})</button>
+            <button className={part === '2' ? 'on' : ''} onClick={() => setPart('2')}>ભાગ 2 ({splitAt + 1}–{full.length})</button>
+          </div>
+        )}
+      </div>
+      <p className="muted">ખાનામાં ટેપ: ખાલી → ✓ (હા) → ✗ (ના) → ખાલી. કીબોર્ડ: ← ↑ ↓ → ફરો · <b>Y / 1</b> = ✓ · <b>N / 0</b> = ✗ · Del = ખાલી (આપમેળે આગળના ખાનામાં જાય). આખી કૉલમ માટે ઉપરનું "✓", આખી લાઇન માટે "બધા ✓".</p>
       {selected && (
         <div className={`qbox lv-${selected.level}`} onClick={() => setSelected(null)}>
-          <b>{selected.index + 1}.</b> {selected.text} <small>({selected.area} · {LEVEL_LABEL[selected.level]})</small>
+          <b>{numOf(selected)}.</b> {selected.text} <small>({selected.area} · {LEVEL_LABEL[selected.level]})</small>
         </div>
       )}
-      <div className="scroll gridwrap">
+      <div className="scroll gridwrap" ref={wrapRef} tabIndex={0} onKeyDown={onKey}>
         <table className="grid">
           <thead>
             <tr className="r1">
+              <th className="srno" rowSpan="6">ક્રમ</th>
               <th className="stick">ક્ષેત્ર</th>
               {areaGroups.map((group) => (
                 <th key={group.key} colSpan={group.span} rowSpan={group.key === NO_STEP_AREA ? 2 : 1}>{group.key}</th>
               ))}
-              <th rowSpan="5">બધા</th><th rowSpan="5">હા</th><th rowSpan="5">પરિણામ</th>
+              <th rowSpan="6">બધા</th><th rowSpan="6">હા</th><th rowSpan="6">પરિણામ</th>
             </tr>
             <tr className="r2">
               <th className="stick">માર્ગદર્શિકામાં સંલગ્ન પગલાનો ક્રમ</th>
@@ -324,36 +467,46 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
             <tr className="r3">
               <th className="stick">ધોરણ</th>
               {classGroups.map((group) => (
-                <th key={group.key} colSpan={group.span}>{LEVEL_LABEL[group.first.level]}</th>
+                <th key={group.key} colSpan={group.span} className={`lv-${group.first.level}`}>{LEVEL_LABEL[group.first.level]}</th>
               ))}
             </tr>
             <tr className="vrow">
               <th className="stick">વિધાન</th>
-              {list.map((statement, index) => (
-                <th key={statement.n} className={`lv-${statement.level} qh`} onClick={() => setSelected({ ...statement, index })}>
+              {list.map((statement) => (
+                <th key={statement.n} className={`lv-${statement.level} qh`} onClick={() => setSelected(statement)}>
                   <div className="vt">{statement.text}</div>
                 </th>
               ))}
             </tr>
             <tr className="nrow">
               <th className="stick">વિદ્યાર્થીનું નામ / વિધાન નંબર →</th>
-              {list.map((statement, index) => <th key={statement.n} className={`lv-${statement.level}`}>{index + 1}</th>)}
+              {list.map((statement) => <th key={statement.n} className={`lv-${statement.level}`}>{numOf(statement)}</th>)}
+            </tr>
+            <tr className="frow">
+              <th className="stick">આખી કૉલમ ભરો ↓</th>
+              {list.map((statement) => (
+                <th key={statement.n}>
+                  <button className="mini yes" disabled={saving} title="આખા વર્ગ માટે ✓" onClick={() => fillColumn(statement.n, true)}>✓</button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {students.map((student, index) => {
+            {students.map((student, r) => {
               const answers = byStudent[student.id]?.answers || {};
               const status = calc(dhoran, answers);
               return (
-                <tr key={student.id}>
-                  <td className="stick">{index + 1}. {student.name}</td>
-                  {list.map((statement) => {
+                <tr key={student.id} className={active?.r === r ? 'rowact' : ''}>
+                  <td className="srno">{r + 1}</td>
+                  <td className="stick">{student.name}</td>
+                  {list.map((statement, c) => {
                     const value = answers[statement.n];
+                    const isActive = active?.r === r && active?.c === c;
                     return (
                       <td
                         key={statement.n}
-                        className={`cell lv-${statement.level} ${value === true ? 'ok' : value === false ? 'bad' : ''}`}
-                        onClick={() => !saving && cycle(student, statement.n)}
+                        className={`cell lv-${statement.level} ${value === true ? 'ok' : value === false ? 'bad' : ''} ${isActive ? 'act' : ''}`}
+                        onClick={() => { if (saving) return; setActive({ r, c }); cycle(student, statement.n); }}
                       >
                         {value === true ? '✓' : value === false ? '✗' : ''}
                       </td>
@@ -377,7 +530,7 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
       <details className="card">
         <summary>વિધાન યાદી (નંબર મુજબ)</summary>
         <ol className="stlist">
-          {list.map((statement, index) => (
+          {full.map((statement, index) => (
             <li key={statement.n} value={index + 1} className={`lv-${statement.level}`}>
               <small>{statement.area}</small> {statement.text}
             </li>
@@ -392,44 +545,62 @@ function StudentForm({ student, index, count, dhoran, answers, onChange, onPrev,
   const list = STATEMENTS[dhoran];
   const status = calc(dhoran, answers);
 
-  const set = (number, value) => onChange({ ...answers, [number]: value });
+  const set = (number, value) => {
+    const next = { ...answers };
+    if (next[number] === value) delete next[number]; else next[number] = value;
+    onChange(next);
+  };
   const allYes = () => onChange(Object.fromEntries(list.map((statement) => [statement.n, true])));
   const clear = () => onChange({});
+  const areas = groupBy(list, (statement) => statement.area);
+  let cursor = 0;
 
   return (
-    <div>
-      <div className="row between">
-        <button className="link" onClick={onClose}>← યાદી</button>
-        <span className="muted">{index + 1} / {count}</span>
+    <div className="sform">
+      <div className="sform-head">
+        <div className="row between">
+          <button className="link" onClick={onClose}>← યાદી</button>
+          <span className="muted">{index + 1} / {count}</span>
+        </div>
+        <h2>{student.name}</h2>
+        <div className="dash-bar big"><i className="n" style={{ width: `${(status.done / status.total) * 100}%` }} /></div>
+        <div className="row between">
+          <span>ભર્યા {status.done}/{status.total} · હા <b>{status.yes}</b></span>
+          {status.cat ? <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label}</span> : <span className="muted">(બધા વિધાન ભરો)</span>}
+        </div>
+        <div className="row">
+          <button className="primary" disabled={saving} onClick={allYes}>બધા હા</button>
+          <button disabled={saving} onClick={clear}>બધું સાફ</button>
+        </div>
       </div>
-      <h2>{student.name}</h2>
-      <div className="row">
-        <button className="primary" disabled={saving} onClick={allYes}>બધા હા</button>
-        <button disabled={saving} onClick={clear}>બધું સાફ</button>
-      </div>
-      <p>
-        હા: <b>{status.yes}</b> / {status.total}{' '}
-        {status.cat ? <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label}</span> : <span className="muted">(બધા વિધાન ભરો)</span>}
-      </p>
 
-      {list.map((statement, indexInClass) => {
-        const value = answers[statement.n];
+      {areas.map((group) => {
+        const items = list.slice(cursor, cursor + group.span);
+        const start = cursor;
+        cursor += group.span;
         return (
-          <div className={`stmt lv-${statement.level}`} key={statement.n}>
-            <small className="muted">{statement.area}</small>
-            <div>{indexInClass + 1}. {statement.text}</div>
-            <div className="yn">
-              <button className={value === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(statement.n, true)}>હા</button>
-              <button className={value === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(statement.n, false)}>ના</button>
-            </div>
+          <div className="sform-area" key={`${group.key}-${start}`}>
+            <h4>{group.key}</h4>
+            {items.map((statement, i) => {
+              const value = answers[statement.n];
+              return (
+                <div className={`stmt lv-${statement.level} ${value === true ? 'is-yes' : value === false ? 'is-no' : ''}`} key={statement.n}>
+                  <div><b>{start + i + 1}.</b> {statement.text}</div>
+                  <div className="yn">
+                    <button className={value === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(statement.n, true)}>✓ હા</button>
+                    <button className={value === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(statement.n, false)}>✗ ના</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         );
       })}
 
       <div className="row sticky">
         <button onClick={onPrev} disabled={index === 0}>← પાછળ</button>
+        <button disabled={!Object.keys(answers).length || saving} onClick={onSave}>{saving ? 'સાચવાય છે…' : '💾 સાચવો'}</button>
         <button className="primary" onClick={onNext}>{index === count - 1 ? 'પૂર્ણ' : 'આગળ →'}</button>
-        <button disabled={!Object.keys(answers).length || saving} onClick={onSave}>{saving ? 'સાચવાય છે…' : 'એન્ટ્રી સાચવો'}</button>
       </div>
     </div>
   );

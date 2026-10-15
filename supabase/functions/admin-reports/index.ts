@@ -3,6 +3,7 @@ import * as XLSX from 'npm:@e965/xlsx@0.20.3';
 import { buildPendingStudents, buildReportMetrics } from '../_shared/reportMetrics.js';
 import { GRADE_RULES } from '../_shared/assessmentRules.js';
 import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
+import { canAccessSchoolReport, reportScope } from '../_shared/reportAuthorization.js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,6 +44,13 @@ type Entry = {
   answers: Record<string, boolean>;
   student: { name: string };
   school: School;
+};
+
+type ReportScope = {
+  role: 'admin' | 'district' | 'block' | 'school';
+  districtCode?: string;
+  blockCode?: string;
+  schoolId?: string;
 };
 
 function jsonResponse(status: number, body: Record<string, unknown>) {
@@ -102,10 +110,13 @@ async function loadRows(query: any, pageSize = 1000, maxRows = Number.POSITIVE_I
   }
 }
 
-async function buildReport(client: ReturnType<typeof createClient>, filters: Filters) {
+async function buildReport(client: ReturnType<typeof createClient>, filters: Filters, scope: ReportScope) {
   const schoolQuery = client.from('schools')
     .select('id,code,name,district,block')
     .order('district').order('block').order('code');
+  if (scope.role === 'district') schoolQuery.like('code', `${scope.districtCode}%`);
+  if (scope.role === 'block') schoolQuery.like('code', `${scope.blockCode}%`);
+  if (scope.role === 'school') schoolQuery.eq('id', scope.schoolId);
   if (filters.schoolId) schoolQuery.eq('id', filters.schoolId);
   if (filters.schoolCode) schoolQuery.eq('code', filters.schoolCode);
   if (filters.district) schoolQuery.eq('district', filters.district);
@@ -187,13 +198,14 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
   };
 }
 
-async function buildSchoolYearReport(client: ReturnType<typeof createClient>, schoolId: string) {
+async function buildSchoolYearReport(client: ReturnType<typeof createClient>, schoolId: string, scope: ReportScope) {
   const { data: school, error: schoolError } = await client.from('schools')
     .select('id,code,name,district,block')
     .eq('id', schoolId)
     .maybeSingle();
   if (schoolError) throw schoolError;
   if (!school) return null;
+  if (!canAccessSchoolReport(scope, school)) return null;
 
   const students = await loadRows(
     client.from('students').select('id,name,dhoran').eq('school_id', schoolId).order('name'),
@@ -383,12 +395,13 @@ Deno.serve(async (request) => {
   const { data: authData, error: authError } = await serviceClient.auth.getUser(token);
   if (authError || !authData.user) return jsonResponse(401, { error: 'Admin session માન્ય નથી.' });
   const { data: profile, error: profileError } = await serviceClient.from('profiles')
-    .select('role,active').eq('id', authData.user.id).maybeSingle();
+    .select('role,active,district_code,block_code,school_id').eq('id', authData.user.id).maybeSingle();
   if (profileError) {
     console.error('Admin report authorization lookup failed:', profileError.message);
     return jsonResponse(500, { error: 'Admin અધિકાર ચકાસી શકાયા નથી.' });
   }
-  if (!profile?.active || !['admin', 'district', 'block', 'school'].includes(profile.role)) {
+  const scope = reportScope(profile);
+  if (!scope) {
     return jsonResponse(403, { error: 'સક્રિય account report માટે અધિકૃત નથી.' });
   }
 
@@ -403,16 +416,12 @@ Deno.serve(async (request) => {
     return jsonResponse(400, { error: 'Request માન્ય JSON નથી.' });
   }
   try {
-    const allowedRoles = ['admin', 'district', 'block', 'school'];
-    if (!allowedRoles.includes(profile.role)) {
-      return jsonResponse(403, { error: 'સક્રિય account report માટે અધિકૃત નથી.' });
-    }
     if (body.action === 'school-year-report') {
       if (typeof body.schoolId !== 'string'
         || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.schoolId)) {
         return jsonResponse(400, { error: 'School UUID માન્ય નથી.' });
       }
-      const schoolReport = await buildSchoolYearReport(userClient, body.schoolId);
+      const schoolReport = await buildSchoolYearReport(userClient, body.schoolId, scope);
       if (!schoolReport) return jsonResponse(404, { error: 'આ accountને આ શાળાનો report જોવાની પરવાનગી નથી અથવા શાળા મળી નથી.' });
       return new Response(schoolYearWorkbook(schoolReport), {
         headers: {
@@ -425,7 +434,7 @@ Deno.serve(async (request) => {
     }
     const filters = validateFilters(body.filters);
     if (typeof filters === 'string') return jsonResponse(400, { error: filters });
-    const report = await buildReport(userClient, filters);
+    const report = await buildReport(userClient, filters, scope);
     if (body.action === 'export' || body.action === 'pending-export') {
       if (body.action === 'pending-export') {
         return new Response(makePendingWorkbook(report, filters), {

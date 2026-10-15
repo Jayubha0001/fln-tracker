@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resetTemporaryPassword } from '../_shared/temporaryPassword.js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -177,7 +178,23 @@ Deno.serve(async (request) => {
     return response(409, { error: 'Auth user અને school profile મેળ ખાતા નથી; કોઈ password બદલ્યો નથી.' });
   }
 
-  const password = temporaryPassword();
+  let temporaryCredential;
+  try {
+    temporaryCredential = resetTemporaryPassword(
+      temporaryPassword(),
+      Deno.env.get('ADMIN_TEMPORARY_PASSWORD'),
+    );
+  } catch (cause) {
+    console.error('Configured school reset password does not meet the required complexity:', cause);
+    try {
+      await audit('failed', 'password_config_invalid');
+      await auditCentral(profile.id, 'failed', 'password_config_invalid');
+    } catch (auditError) {
+      console.error('Unable to audit school reset password configuration failure:', auditError);
+    }
+    return response(500, { error: 'Server password-reset configuration is invalid; no password was changed.' });
+  }
+  const password = temporaryCredential.password;
   let resetError;
   try {
     ({ error: resetError } = await admin.auth.admin.updateUserById(profile.id, { password }));
@@ -245,5 +262,6 @@ Deno.serve(async (request) => {
     loginId: school.code,
     temporaryPassword: password,
     mustChangePassword: true,
+    temporaryPasswordMode: temporaryCredential.mode,
   });
 });

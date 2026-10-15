@@ -59,14 +59,17 @@ React + Vite FLN Maths Tracker using Supabase Authentication and PostgreSQL.
    explicitly report these missing, configure them only in Supabase Edge
    Function secrets; never put the service-role key in a Vite variable, browser
    bundle, or Vercel `VITE_` variable.
-   Admins can create all missing active-school accounts at once. School ID is
-   the login ID; each school gets a unique random one-time password that must
-   be changed before its dashboard opens. Credentials are shown once and can
-   be downloaded as a sensitive CSV for secure, per-school delivery. These
-   generated accounts use non-mailbox synthetic Auth emails, so password
-   reset by email is unavailable; an Admin must reset credentials through the
-   Supabase Dashboard. Do not change a school's School ID after provisioning
-   its account because that ID is the login mapping.
+   School ID is the login ID; each school gets a unique random one-time
+   password that must be changed before its dashboard opens. The Admin Panel's
+   Central Login & Password Management section is the only account-management
+   screen for District, Block, and School accounts. It provides search, filters,
+   pagination, account status, school editing/report actions, and one-time
+   password resets. Credentials are shown only from a successful server
+   response, kept in page memory, and can be downloaded as a sensitive Excel
+   workbook for secure delivery. Passwords are never recovered from storage.
+   Do not change a school's School ID after provisioning its account because
+   that ID is the login mapping and existing student/entry relationships must
+   remain intact.
    Before any account-creation retry, verify that the Vercel
    `VITE_SUPABASE_URL` points to the project where the function is deployed.
    Test one school first. The function checks existing Auth users and matching
@@ -89,6 +92,53 @@ React + Vite FLN Maths Tracker using Supabase Authentication and PostgreSQL.
    The Admin Panel also allows selecting a school to manage
    its students, assessment entries, and reports. Share each one-time password
    securely with only its school.
+
+## Central login and password management
+
+The central Admin Panel lists District, Block, and School accounts by tab.
+Search/status filters and pagination apply to the active tab. School rows also
+provide school-detail editing, annual FLN reports, Login ID copying, account
+status, and first-login password-change status. Editing school details never
+updates the School ID.
+
+For District/Block reset support, confirm the migration
+`supabase/migrations/202610140005_scoped_password_reset_audit.sql` is recorded
+and that `scoped_password_reset_audit` is available through the API. The
+central list and audit migration is
+`supabase/migrations/202610150001_central_login_management.sql`. School reset
+audit was introduced by
+`supabase/migrations/202610140001_admin_reporting_and_password_audit.sql`;
+do not replay that older migration merely to repair the audit table because
+it also changes an entries primary key. Verify the database migration history
+and objects first. Do not reset the database or recreate any Auth users.
+
+From PowerShell at the repository root, review pending migrations before
+applying anything. Only run `db push` if its dry run lists migrations you have
+reviewed and approved; it may apply every pending migration:
+
+```powershell
+$projectRef = '<project-ref>'
+supabase login
+supabase link --project-ref $projectRef
+supabase migration list --project-ref $projectRef
+supabase db push --project-ref $projectRef --dry-run
+# Review the dry-run output. Do not proceed if it includes unexpected migrations.
+supabase db push --project-ref $projectRef
+supabase functions deploy admin-scoped-account-management --project-ref $projectRef
+supabase functions deploy admin-school-password-reset --project-ref $projectRef
+supabase functions list --project-ref $projectRef
+```
+
+Do not pass `--no-verify-jwt`. Both management functions must keep JWT
+verification enabled and independently check for an active Admin profile.
+Supabase's service-role key belongs only in server-side Edge Function secrets;
+never place it in Vite variables, browser storage, or Vercel environment
+variables prefixed with `VITE_`. After deploy, verify the functions in the
+Supabase Dashboard and test one designated account before announcing the
+production change. For a safe reset test, select exactly one test account,
+confirm the single-account warning, copy/download the returned temporary
+credential, sign in with it, and verify that the user is forced to change the
+password. Confirm no other account was changed.
 
 ## School student import
 
@@ -185,33 +235,36 @@ indexes, and the password-reset audit table; it does not delete or rewrite
 existing entries. Its `DO` block stops if existing data prevents the new key.
 Historical dates intentionally stay `NULL`.
 
-After reviewing each full SQL file, an authorized operator can apply the
-migrations in order in **Supabase Dashboard → SQL Editor**: first
-`202610140001_admin_reporting_and_password_audit.sql`, then
-`202610140002_scoped_district_block_accounts.sql`, then
-`202610140003_school_import_cluster_id.sql`, then
-`202610140004_admin_report_assessment_date_compat.sql` if needed, then
-`202610140005_scoped_password_reset_audit.sql` for District/Block account
-management, and `202610150001_central_login_management.sql` for the unified
-District/Block/School login manager, server-side account pagination, and
-password-free create/reset audit. Do not blindly replay the initial schema
-migration. The second migration assumes School Code's first 4
-digits are District Code and first 6 digits are Block Code. It preserves
-existing Admin/School profiles, adds scoped read/write RLS for active schools,
-and requires a one-time password change for new regional accounts. Confirm the
-dashboard project ref is the same one used by Vercel's `VITE_SUPABASE_URL`.
-Then deploy the functions from the repository root using Windows PowerShell:
+Check the remote migration history first; do not blindly apply or replay these
+migrations. `202610140001_admin_reporting_and_password_audit.sql` changes the
+entries primary key and creates the school reset audit table. `202610140002_`
+adds regional profile scope and replaces school/student/entry RLS policies.
+`202610140005_scoped_password_reset_audit.sql` creates the regional reset audit,
+and `202610150001_central_login_management.sql` creates the central audit and
+list RPC. Apply only migrations confirmed missing after reviewing each complete
+SQL file and the live schema. Never apply the initial migration to an existing
+database. Migration `202610140002` assumes School Code's first 4 digits are
+District Code and first 6 digits are Block Code. The application now also
+filters reports server-side from the authenticated profile scope; RLS remains
+the database enforcement layer. Confirm the dashboard project ref matches
+Vercel's `VITE_SUPABASE_URL`.
+
+After the migration review, run these PowerShell commands from the repository
+root. Inspect `migration list` and `db push --dry-run`; do not run `db push` if
+it includes an unexpected migration:
 
 ```powershell
+$projectRef = '<project-ref>'
 supabase login
-supabase link --project-ref nutnaymoiazrhhwgqlyv
-supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv
-supabase functions deploy admin-school-password-reset --project-ref nutnaymoiazrhhwgqlyv
-supabase functions deploy admin-scoped-account-management --project-ref nutnaymoiazrhhwgqlyv
-supabase functions deploy create-scoped-account --project-ref nutnaymoiazrhhwgqlyv
-supabase functions deploy create-school-account --project-ref nutnaymoiazrhhwgqlyv
-supabase functions deploy admin-import-schools --project-ref nutnaymoiazrhhwgqlyv
-supabase functions list --project-ref nutnaymoiazrhhwgqlyv
+supabase link --project-ref $projectRef
+supabase migration list --project-ref $projectRef
+supabase db push --project-ref $projectRef --dry-run
+# Review the pending list before applying anything.
+supabase db push --project-ref $projectRef
+supabase functions deploy admin-reports --project-ref $projectRef
+supabase functions deploy admin-school-password-reset --project-ref $projectRef
+supabase functions deploy admin-scoped-account-management --project-ref $projectRef
+supabase functions list --project-ref $projectRef
 ```
 
 `supabase/config.toml` keeps `verify_jwt = true` for every listed function.
@@ -221,7 +274,20 @@ Function secrets only; never set the service-role key in Vercel or a `VITE_`
 variable. Password reset updates only the verified school Auth user, sets the
 mandatory password-change flag after the Auth password update trigger runs,
 records a password-free audit result, and returns its random temporary
-credential only on a fully successful response. If the response is lost or
+credential only on a fully successful response. By default, reset passwords
+are unique random values. An optional `ADMIN_TEMPORARY_PASSWORD` Edge Function
+secret overrides them with a shared value (for example `Admin@123`) and is
+never returned from configuration or written to logs/database. This is a
+serious security risk because every reset then uses the same password; use
+only as a short-lived emergency measure, restrict access to the secret, and
+remove it immediately afterward. The override must have at least 8 characters,
+uppercase and lowercase letters, a number, and a symbol. Password reset still
+sets the mandatory first-login change flag. Configure it only in the Supabase
+Edge Function secrets dashboard, never in the browser or Vercel.
+`Admin@123` meets the app's eight-character first-login form minimum and this
+basic complexity check, but the project's Auth password/breach policy may be
+stricter; if Auth rejects it, reset returns an error and does not show success.
+If the response is lost or
 audit/flag setup fails, do not assume the password; verify Auth/profile/audit
 state before any further reset.
 
@@ -235,12 +301,13 @@ returns a temporary password only after Auth update, mandatory password-change
 flag, and audit insertion all succeed. It does not reset credentials while
 loading the management list.
 
-The Admin Panel has a per-school **વાર્ષિક શાળા FLN Report** Excel button and a
-central **Login & Password Management** section with District, Block, and
-School tabs, server-filtered 50-row pages, account creation/reset, and Copy
-Login ID. Download Credentials CSV is enabled only after the server confirms a
-successful create/reset; its in-memory credentials are not stored in database
-tables or browser storage. Existing Auth passwords cannot be retrieved.
+The Admin Panel has per-school annual report actions and a central
+**Login & Password Management** section with District, Block, and School tabs,
+server-filtered pages, account creation/reset, and Copy Login ID. Temporary
+passwords are displayed/exported only when the server confirms success. The
+workbook includes status rows with blank passwords for failures; credentials
+stay in page memory and are not stored in database tables or browser storage.
+Existing Auth passwords cannot be retrieved.
 Login IDs are taken from school codes: District
 uses four digits (for example `2428`) and Block uses six (`242801`). Those
 users can edit student and entry data within their RLS-scoped active schools,
@@ -268,6 +335,10 @@ requirements are confirmed.
 
 The District/Block dashboard displays the signed-in account's district and
 block names and limits school reports to its active RLS-scoped schools. The
+`admin-reports` Edge Function derives scope from the authenticated profile and
+applies district/block/school-code filters server-side regardless of client
+filters; annual reports also check the requested school against that scope.
+The
 report's **બાકી વિદ્યાર્થીઓ – Excel Download** exports the pending student
 list for the selected save-date range, grade, and assessment-month filters;
 pending means no matching entry exists for those filters.
