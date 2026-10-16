@@ -9,8 +9,6 @@ const NAVIGATION = {
     ['entry', 'FLN Entry', 'FLN એન્ટ્રી', '✎'],
     ['summary', 'Summary & Analytics', 'સારાંશ અને વિશ્લેષણ', '▥'],
     ['accounts', 'Login & Password Management', 'લૉગિન અને પાસવર્ડ', '▣'],
-    ['school-import', 'School Import', 'શાળા Import', '⇧'],
-    ['student-import', 'Student Import', 'વિદ્યાર્થી Import', '⇧'],
   ],
   district: [
     ['dashboard', 'Dashboard', 'મુખ્ય સારાંશ', '▦'],

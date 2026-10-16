@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { calc, CLASSES, MONTHS } from '../lib/category';
 import { loadAllRows } from '../lib/loadAllRows';
+import DashboardOverview from '../components/DashboardOverview.jsx';
 
 const GRADE_TABS = [{ key: '', label: 'બધા ધોરણ' }, ...Object.entries(CLASSES).map(([key, v]) => ({ key, label: v.label }))];
 const LEVEL_TITLE = { district: 'જિલ્લો', block: 'તાલુકો', school: 'શાળા' };
@@ -173,7 +174,30 @@ export default function AdminDashboard({ supabase, profile }) {
     u: t.u + Number(r.uday), p: t.p + Number(r.pragati), n: t.n + Number(r.nipun),
   }), { registered: 0, entered: 0, u: 0, p: 0, n: 0 }), [groups]);
 
+  const overviewRows = useMemo(() => {
+    if (scope.school) {
+      return GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => {
+        const r = gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 };
+        return { key: k, label: CLASSES[k].label, ...r };
+      });
+    }
+    return groups.map((r) => ({
+      key: r.group_key + (r.school_id || ''), label: r.group_label, raw: r,
+      registered: Number(r.registered), entered: Number(r.entered),
+      u: Number(r.uday), p: Number(r.pragati), n: Number(r.nipun),
+    }));
+  }, [scope.school, grade, gradeReport, groups]);
+  const overviewTotals = useMemo(() => overviewRows.reduce((t, r) => ({
+    registered: t.registered + r.registered, entered: t.entered + r.entered,
+    u: t.u + r.u, p: t.p + r.p, n: t.n + r.n,
+  }), { registered: 0, entered: 0, u: 0, p: 0, n: 0 }), [overviewRows]);
+
   const ledgerByMonth = useMemo(() => new Map(ledger.map((r) => [r.month, r])), [ledger]);
+  const trend = useMemo(() => MONTHS.map((m) => {
+    const r = ledgerByMonth.get(m.key);
+    const reg = Number(ledger[0]?.registered || 0);
+    return { key: m.key, label: m.label, has: Boolean(r), entryPct: r ? pct(Number(r.entered), reg) : 0, nipunPct: r ? pct(Number(r.nipun), reg) : 0 };
+  }), [ledger, ledgerByMonth]);
   const studentProgressCounts = useMemo(() => (studentProgress || []).reduce((counts, student) => {
     counts[student.status] += 1;
     return counts;
@@ -240,6 +264,16 @@ export default function AdminDashboard({ supabase, profile }) {
             ))}
           </nav>
         </div>
+        <div className="dash-gauge" role="img" aria-label={`FLN સિદ્ધિ ${pct(overviewTotals.n, overviewTotals.registered)}%`}>
+          <svg viewBox="0 0 120 78">
+            <path d="M10 70 A50 50 0 0 1 110 70" pathLength="100" className="dash-gauge-track" />
+            <path d="M10 70 A50 50 0 0 1 110 70" pathLength="100" className="dash-gauge-fill"
+              strokeDasharray={`${Math.min(100, pct(overviewTotals.n, overviewTotals.registered))} 100`} />
+            <text x="60" y="58" textAnchor="middle" className="dash-gauge-num">{pct(overviewTotals.n, overviewTotals.registered)}%</text>
+            <text x="60" y="73" textAnchor="middle" className="dash-gauge-cap">FLN સિદ્ધિ</text>
+          </svg>
+          <span>એન્ટ્રી {pct(overviewTotals.entered, overviewTotals.registered)}% · નિપુણ {overviewTotals.n.toLocaleString()}</span>
+        </div>
         <div className="dash-hero-actions">
           <label className="dash-live"><input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Live</label>
           <button type="button" onClick={() => load()} disabled={busy}>↻ Refresh</button>
@@ -263,15 +297,14 @@ export default function AdminDashboard({ supabase, profile }) {
 
       {error && <p className="error" role="alert">{error}</p>}
 
-      {!scope.school && (
-        <div className="dash-kpis">
-          <Kpi label="રજિસ્ટર સંખ્યા" value={totals.registered.toLocaleString()} sub={`${groups.length} ${LEVEL_TITLE[level]}`} />
-          <Kpi label={`${monthLabel(month)} એન્ટ્રી`} value={totals.entered.toLocaleString()} sub={`${pct(totals.entered, totals.registered)}% પૂર્ણ`} />
-          <Kpi tone="u" label="ઉદયમાન" value={totals.u.toLocaleString()} sub={`${pct(totals.u, totals.entered)}%`} />
-          <Kpi tone="p" label="પ્રગતિશીલ" value={totals.p.toLocaleString()} sub={`${pct(totals.p, totals.entered)}%`} />
-          <Kpi tone="n" label="નિપુણ" value={totals.n.toLocaleString()} sub={`${pct(totals.n, totals.entered)}%`} />
-        </div>
-      )}
+      <DashboardOverview
+        unitTitle={scope.school ? 'ધોરણ' : LEVEL_TITLE[level]}
+        monthLabel={monthLabel(month)}
+        rows={overviewRows}
+        totals={overviewTotals}
+        trend={trend}
+        onSelect={scope.school ? undefined : (row) => drill(row.raw)}
+      />
 
       {scope.school && (
         <>
@@ -315,7 +348,14 @@ export default function AdminDashboard({ supabase, profile }) {
         <div className="card dash-card">
           <div className="row between">
             <h3>{LEVEL_TITLE[level]} પ્રમાણે – {monthLabel(month)} {gradeInfo ? `· ${gradeInfo.label}` : ''}</h3>
-            <input className="dash-search" placeholder={`${LEVEL_TITLE[level]} શોધો…`} value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="dash-table-tools">
+              <input className="dash-search" placeholder={`${LEVEL_TITLE[level]} શોધો…`} value={q} onChange={(e) => setQ(e.target.value)} />
+              <label>માસ
+                <select aria-label="માસ" value={month} onChange={(e) => setMonth(e.target.value)}>
+                  {MONTHS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </select>
+              </label>
+            </div>
           </div>
           <div className="scroll dash-scroll">
             <table className="dash-table">

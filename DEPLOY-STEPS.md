@@ -4,7 +4,7 @@ Production Supabase ref: nutnaymoiazrhhwgqlyv   (nothing is deployed yet; migrat
 ## 0. Pehla (project folder ma, PowerShell)
 cd "D:\Nipun Gujarat Project\fln-tracker"
 git status                       # tamara local changes joi lo; 6 files copy karya pehla compare karo
-# ZIP ni 8 files copy karo (navo design: src\components\DashboardLayout.jsx, src\index.css): src\pages\ScopedDashboard.jsx, src\pages\Students.jsx,
+# ZIP ni 11 files copy karo (navo design + AdminPanel.jsx: src\components\DashboardLayout.jsx, src\components\DashboardOverview.jsx (NAVI), src\pages\AdminDashboard.jsx, src\index.css): src\pages\ScopedDashboard.jsx, src\pages\Students.jsx,
 # supabase\functions\_shared\scopedAccountManagement.js,
 # supabase\functions\admin-scoped-account-management\index.ts,
 # tests\scopedAccountManagement.test.js, tests\scopedStudentsWiring.test.js

@@ -96,6 +96,28 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
     return true;
   }
 
+  const addSchoolForm = (
+    <form className="card" onSubmit={saveSchool}>
+      <label>જિલ્લો<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
+      <label>
+        તાલુકો પસંદ કરો અથવા નવો દાખલ કરો
+        <input required list="fln-taluka-options" value={form.block} onChange={(e) => setForm({ ...form, block: e.target.value })} />
+        <datalist id="fln-taluka-options">
+          {[...new Set(schools.map((school) => school.block.trim()).filter(Boolean))].map((block) => (
+            <option key={block} value={block} />
+          ))}
+        </datalist>
+      </label>
+      <label>ક્લસ્ટર<input value={form.cluster} onChange={(e) => setForm({ ...form, cluster: e.target.value })} /></label>
+      <label>શાળા કોડ / School ID<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></label>
+      <label>શાળાનું નામ<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+      <div className="row">
+        <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
+        <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો</button>
+      </div>
+    </form>
+  );
+
   const workspaceSections = ['student-management', 'entry', 'summary'];
   const workspaceTab = {
     'student-management': 'students',
@@ -120,7 +142,24 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
       )}
       {activeSection === 'school-management' && (
         <>
-          <p className="muted">શાળા વિગતો, School ID, account actions અને વાર્ષિક report અહીં School Logins ટેબમાં ઉપલબ્ધ છે.</p>
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">⇧</span>
+              <b>School Import</b>
+              <small>શાળા Excel/CSV માંથી Import કરો</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} /></div>
+          </details>
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">＋</span>
+              <b>નવી શાળા ઉમેરો</b>
+              <small>એક શાળા જાતે ઉમેરો</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body">{addSchoolForm}</div>
+          </details>
           <AdminScopedAccountManagement
             key={activeSection}
             supabase={supabase}
@@ -130,33 +169,16 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           />
         </>
       )}
-      {activeSection === 'school-import' && (
-        <>
-          <AdminSchoolImport supabase={supabase} onImportComplete={loadSchools} />
-          <form className="card" onSubmit={saveSchool}>
-            <h3>નવી શાળા ઉમેરો</h3>
-            <label>જિલ્લો<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
-            <label>
-              તાલુકો પસંદ કરો અથવા નવો દાખલ કરો
-              <input required list="fln-taluka-options" value={form.block} onChange={(e) => setForm({ ...form, block: e.target.value })} />
-              <datalist id="fln-taluka-options">
-                {[...new Set(schools.map((school) => school.block.trim()).filter(Boolean))].map((block) => (
-                  <option key={block} value={block} />
-                ))}
-              </datalist>
-            </label>
-            <label>ક્લસ્ટર<input value={form.cluster} onChange={(e) => setForm({ ...form, cluster: e.target.value })} /></label>
-            <label>શાળા કોડ / School ID<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></label>
-            <label>શાળાનું નામ<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            <div className="row">
-              <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
-              <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો</button>
-            </div>
-          </form>
-        </>
-      )}
-      {activeSection === 'student-import' && (
-        <AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} />
+      {activeSection === 'student-management' && (
+        <details className="tool">
+          <summary>
+            <span className="tool-ico" aria-hidden="true">⇧</span>
+            <b>Student Import</b>
+            <small>વિદ્યાર્થીઓ Excel/CSV માંથી Import કરો</small>
+            <i className="tool-chev" aria-hidden="true">⌄</i>
+          </summary>
+          <div className="tool-body"><AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} /></div>
+        </details>
       )}
       {workspaceSections.includes(activeSection) && (
         <>
