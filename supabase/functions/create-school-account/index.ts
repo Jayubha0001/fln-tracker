@@ -1,4 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  accountManagementScope,
+  schoolMatchesManagementScope,
+} from '../_shared/accountManagementAuthorization.js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -99,16 +103,15 @@ async function handleRequest(request: Request) {
 
   const { data: caller, error: callerError } = await adminClient
     .from('profiles')
-    .select('role, active')
+    .select('role, active, district_code, block_code')
     .eq('id', authData.user.id)
     .maybeSingle();
   if (callerError) {
     console.error('Unable to verify caller role:', callerError.message);
     return response(500, { error: 'Admin અધિકાર ચકાસી શકાયા નથી.' });
   }
-  if (caller?.role !== 'admin' || !caller.active) {
-    return response(403, { error: 'આ કાર્ય માટે Admin અધિકાર જરૂરી છે.' });
-  }
+  const scope = accountManagementScope(caller);
+  if (!scope) return response(403, { error: 'સક્રિય અને માન્ય account-management scope જરૂરી છે.' });
 
   let body: unknown;
   try {
@@ -131,6 +134,9 @@ async function handleRequest(request: Request) {
   if (selectionCount !== 1) {
     return response(400, { error: 'એક schoolId, schoolIds batch, અથવા createAllMissing પસંદ કરો.' });
   }
+  if (createAllMissing && scope.role !== 'admin') {
+    return response(403, { error: 'District/Block usersએ તેમના વિસ્તારની missing શાળાઓ પસંદ કરીને જ account બનાવવો.' });
+  }
   if (schoolIds.length > 100 || new Set(schoolIds).size !== schoolIds.length) {
     return response(400, { error: 'schoolIds batch 1થી 100 unique IDsનું હોવું જોઈએ.' });
   }
@@ -140,44 +146,6 @@ async function handleRequest(request: Request) {
     return response(503, {
       error: 'admin_account_audit migration 202610150001_central_login_management.sql યોગ્ય Supabase project પર લાગુ નથી અથવા API schema cache જૂનો છે. કોઈ account create કરાયો નથી.',
     });
-  }
-
-  const { data: schools, error: schoolsError } = await adminClient
-    .from('schools')
-    .select('id, code, name, active')
-    .eq('active', true)
-    .order('code');
-  if (schoolsError) {
-    console.error('Unable to load active schools:', schoolsError.message);
-    return response(500, { error: 'સક્રિય શાળાઓ લોડ થઈ શકી નથી.' });
-  }
-
-  const targets = createAllMissing
-    ? schools || []
-    : (schools || []).filter((school) => schoolIds.length
-      ? schoolIds.includes(school.id)
-      : school.id === schoolId);
-  if (!targets.length) {
-    return response(404, { error: 'સક્રિય શાળા મળી નથી.' });
-  }
-  if (schoolIds.length && targets.length !== schoolIds.length) {
-    return response(404, { error: 'Batchમાંની એક અથવા વધુ શાળા સક્રિય નથી અથવા મળી નથી.' });
-  }
-
-  const { data: existingProfiles, error: profilesError } = await adminClient
-    .from('profiles')
-    .select('id, email, school_id')
-    .eq('role', 'school');
-  if (profilesError) {
-    console.error('Unable to check existing school profiles:', profilesError.message);
-    return response(500, { error: 'હાલના school accounts ચકાસી શકાયા નથી.' });
-  }
-
-  let projectRef = '';
-  try {
-    projectRef = new URL(url).hostname.split('.')[0];
-  } catch {
-    return response(500, { error: 'Supabase project URL માન્ય નથી.' });
   }
   async function audit(
     school: { id: string; code: string },
@@ -197,6 +165,56 @@ async function handleRequest(request: Request) {
       detail_code: detailCode,
     });
     if (error) throw error;
+  }
+
+  const { data: schools, error: schoolsError } = await adminClient
+    .from('schools')
+    .select('id, code, name, active')
+    .eq('active', true)
+    .order('code');
+  if (schoolsError) {
+    console.error('Unable to load active schools:', schoolsError.message);
+    return response(500, { error: 'સક્રિય શાળાઓ લોડ થઈ શકી નથી.' });
+  }
+
+  const requestedTargets = createAllMissing
+    ? (schools || []).filter((school) => schoolMatchesManagementScope(scope, school.code))
+    : (schools || []).filter((school) => schoolIds.length
+      ? schoolIds.includes(school.id)
+      : school.id === schoolId);
+  if (!requestedTargets.length) {
+    return response(404, { error: 'સક્રિય શાળા મળી નથી.' });
+  }
+  if (schoolIds.length && requestedTargets.length !== schoolIds.length) {
+    return response(404, { error: 'Batchમાંની એક અથવા વધુ શાળા સક્રિય નથી અથવા મળી નથી.' });
+  }
+  const outOfScope = requestedTargets.filter((school) => !schoolMatchesManagementScope(scope, school.code));
+  if (outOfScope.length) {
+    try {
+      for (const school of outOfScope) await audit(school, null, 'failed', 'account_scope_forbidden');
+    } catch (cause) {
+      console.error('Unable to audit out-of-scope school account creation:', cause);
+      return response(500, { error: 'શાળા તમારા scope બહાર છે અને audit log સાચવાયો નથી; account બનાવાયો નથી.' });
+    }
+    return response(403, { error: 'એક અથવા વધુ શાળાઓ તમારા અધિકૃત scope બહાર છે.' });
+  }
+  const targets = requestedTargets;
+
+  const { data: existingProfiles, error: profilesError } = await adminClient
+    .from('profiles')
+    .select('id, email, school_id')
+    .eq('role', 'school')
+    .in('school_id', targets.map((school) => school.id));
+  if (profilesError) {
+    console.error('Unable to check existing school profiles:', profilesError.message);
+    return response(500, { error: 'હાલના school accounts ચકાસી શકાયા નથી.' });
+  }
+
+  let projectRef = '';
+  try {
+    projectRef = new URL(url).hostname.split('.')[0];
+  } catch {
+    return response(500, { error: 'Supabase project URL માન્ય નથી.' });
   }
   const validTargets = targets.filter((school) => /^\d{11}$/.test(String(school.code).trim()));
   let authUsers: AuthUserIndex = { byId: new Map(), byEmail: new Map() };

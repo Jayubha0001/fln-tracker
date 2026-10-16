@@ -12,7 +12,14 @@ const EMPTY_FILTERS = {
   block: '',
   dhoran: '',
   month: '',
+  status: 'all',
 };
+const REPORT_STATUS = [
+  ['all', 'બધા'],
+  ['complete', 'પૂર્ણ'],
+  ['incomplete', 'અપૂર્ણ'],
+  ['pending', 'બાકી'],
+];
 
 function errorMessage(error) {
   const context = error?.context;
@@ -29,6 +36,22 @@ function errorMessage(error) {
   return Promise.resolve(error?.message || 'Report request નિષ્ફળ.');
 }
 
+function validReportResponse(data) {
+  return data
+    && typeof data === 'object'
+    && data.totals
+    && ['schools', 'entries', 'pendingStudents', 'districts', 'blocks', 'monthly', 'daily', 'outcomes']
+      .every((key) => Array.isArray(data[key]))
+    && Number.isSafeInteger(data.page)
+    && Number.isSafeInteger(data.entryPageCount)
+    && Number.isSafeInteger(data.schoolPageCount)
+    && Number.isSafeInteger(data.pendingPageCount)
+    && typeof data.generatedAt === 'string'
+    && !Number.isNaN(Date.parse(data.generatedAt))
+    && ['schools', 'enrolled', 'assessed', 'submitted', 'complete', 'incomplete', 'pending', 'completionPercent']
+      .every((key) => Number.isFinite(data.totals[key]));
+}
+
 export default function AdminReports({ supabase, profile }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
@@ -36,7 +59,10 @@ export default function AdminReports({ supabase, profile }) {
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [exportMessage, setExportMessage] = useState('');
   const isAdmin = profile?.role === 'admin';
+  const canFilterBlock = isAdmin || profile?.role === 'district';
+  const canFilterSchool = ['admin', 'district', 'block'].includes(profile?.role);
 
   useEffect(() => {
     let active = true;
@@ -48,11 +74,18 @@ export default function AdminReports({ supabase, profile }) {
       if (!active) return;
       if (invokeError) {
         setError(await errorMessage(invokeError));
+        setReport(null);
+      } else if (!validReportResponse(data)) {
+        setReport(null);
+        setError('Report response format માન્ય નથી. Updated admin-reports Edge Function deploy થયેલ છે કે નહીં તપાસો.');
       } else {
         setReport(data);
       }
     }).catch((cause) => {
-      if (active) setError(`દિવસવાર report લોડ ન થયો: ${cause.message}`);
+      if (active) {
+        setReport(null);
+        setError(`દિવસવાર report લોડ ન થયો: ${cause.message}`);
+      }
     }).finally(() => {
       if (active) setBusy(false);
     });
@@ -72,12 +105,15 @@ export default function AdminReports({ supabase, profile }) {
     }
     setPage(1);
     setReport(null);
+    setError('');
+    setExportMessage('');
     setApplied({ ...filters });
   }
 
   async function exportReport() {
     setBusy(true);
     setError('');
+    setExportMessage('');
     try {
       const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
         body: { action: 'export', filters: applied },
@@ -97,6 +133,7 @@ export default function AdminReports({ supabase, profile }) {
       anchor.download = `fln-admin-${applied.startDate}-${applied.endDate}.xlsx`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportMessage('Filtered Excel report ડાઉનલોડ થયું.');
     } catch (cause) {
       setError(`Excel export નિષ્ફળ: ${cause.message}`);
     } finally {
@@ -107,6 +144,7 @@ export default function AdminReports({ supabase, profile }) {
   async function exportPendingList() {
     setBusy(true);
     setError('');
+    setExportMessage('');
     try {
       const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
         body: { action: 'pending-export', filters: applied },
@@ -126,8 +164,40 @@ export default function AdminReports({ supabase, profile }) {
       anchor.download = `fln-pending-${applied.startDate}-${applied.endDate}.xlsx`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportMessage('Filtered pending report ડાઉનલોડ થયું.');
     } catch (cause) {
       setError(`Pending list download નિષ્ફળ: ${cause.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportIncompleteList() {
+    setBusy(true);
+    setError('');
+    setExportMessage('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
+        body: { action: 'incomplete-export', filters: applied },
+        responseType: 'blob',
+      });
+      if (invokeError) {
+        setError(await errorMessage(invokeError));
+        return;
+      }
+      if (!(data instanceof Blob) || data.size === 0) {
+        setError('Incomplete Excel export ખાલી અથવા અમાન્ય છે; ફરી પ્રયાસ કરતાં પહેલાં function logs તપાસો.');
+        return;
+      }
+      const url = URL.createObjectURL(data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `fln-incomplete-${applied.startDate}-${applied.endDate}.xlsx`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportMessage('Filtered incomplete report ડાઉનલોડ થયું.');
+    } catch (cause) {
+      setError(`Incomplete list download નિષ્ફળ: ${cause.message}`);
     } finally {
       setBusy(false);
     }
@@ -139,21 +209,33 @@ export default function AdminReports({ supabase, profile }) {
 
   const pctOf = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
   const stmtText = (dhoran, n) => STATEMENTS[dhoran]?.find((x) => String(x.n) === String(n))?.text || '';
+  const completionMetricsAvailable = Number.isFinite(report?.totals?.complete)
+    && Number.isFinite(report?.totals?.incomplete);
+  const reportEmpty = report && report.entries.length === 0 && report.pendingStudents.length === 0;
+  const selectedFilterText = [
+    `તારીખ ${applied.startDate} થી ${applied.endDate}`,
+    applied.month ? `Assessment month ${applied.month}` : 'બધા assessment મહિના',
+    applied.dhoran ? `ધોરણ ${CLASSES[applied.dhoran]?.label || applied.dhoran}` : 'બધાં ધોરણ',
+    `સ્થિતિ ${REPORT_STATUS.find(([key]) => key === applied.status)?.[1] || 'બધા'}`,
+    applied.district ? `જિલ્લો ${applied.district}` : '',
+    applied.block ? `તાલુકો ${applied.block}` : '',
+    applied.schoolCode ? `શાળા ${applied.schoolCode}` : '',
+  ].filter(Boolean).join(' · ');
 
   return (
     <section className="admin-reports dash">
       <div className="dash-hero">
         <div>
           <small>FLN · Entry Monitoring</small>
-          <h2>દિવસવાર એન્ટ્રી રિપોર્ટ</h2>
+          <h2>FLN મૂલ્યાંકન અને પ્રગતિ રિપોર્ટ</h2>
         </div>
       </div>
-      <form className="dash-filter-card report-filters" onSubmit={applyFilters}>
+      <form className="dash-filter-card report-filters no-print" onSubmit={applyFilters}>
         <label>Start date<input required type="date" value={filters.startDate} onChange={(event) => update('startDate', event.target.value)} /></label>
         <label>End date<input required type="date" value={filters.endDate} onChange={(event) => update('endDate', event.target.value)} /></label>
-        {isAdmin && <label>શાળા કોડ<input inputMode="numeric" value={filters.schoolCode} onChange={(event) => update('schoolCode', event.target.value)} placeholder="બધી શાળાઓ" /></label>}
+        {canFilterSchool && <label>શાળા કોડ<input inputMode="numeric" value={filters.schoolCode} onChange={(event) => update('schoolCode', event.target.value)} placeholder="બધી શાળાઓ" /></label>}
         {isAdmin && <label>જિલ્લો<input value={filters.district} onChange={(event) => update('district', event.target.value)} /></label>}
-        {isAdmin && <label>તાલુકો<input value={filters.block} onChange={(event) => update('block', event.target.value)} /></label>}
+        {canFilterBlock && <label>તાલુકો<input value={filters.block} onChange={(event) => update('block', event.target.value)} /></label>}
         <label>ધોરણ
           <select value={filters.dhoran} onChange={(event) => update('dhoran', event.target.value)}>
             <option value="">બધાં</option>
@@ -166,21 +248,68 @@ export default function AdminReports({ supabase, profile }) {
             {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
         </label>
+        <label>Assessment status
+          <select value={filters.status} onChange={(event) => update('status', event.target.value)}>
+            {REPORT_STATUS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
         <button className="primary" disabled={busy}>Report જુઓ</button>
         <button type="button" disabled={busy || !report} onClick={exportReport}>⬇ Excel</button>
         <button type="button" disabled={busy || !report} onClick={exportPendingList}>⬇ બાકી વિદ્યાર્થીઓ</button>
+        <button type="button" disabled={busy || !completionMetricsAvailable} onClick={exportIncompleteList}>⬇ અપૂર્ણ assessment</button>
+        <button type="button" disabled={busy || !report} onClick={() => window.print()}>🖨 Print</button>
       </form>
-      <p className="muted">તારીખના filters સાચવવાના સમય (updated_at) પર લાગુ પડે છે. જૂની entries માટે મૂળ assessment date અજ્ઞાત હોઈ શકે.</p>
+      <p className="muted no-print">તારીખના filters સાચવવાના સમય (updated_at) પર લાગુ પડે છે. જૂની entries માટે મૂળ assessment date અજ્ઞાત હોઈ શકે.</p>
+      {exportMessage && <p className="success no-print" role="status">{exportMessage}</p>}
+      {report && !completionMetricsAvailable && (
+        <p className="muted no-print" role="status">પૂર્ણ/અપૂર્ણ assessment ગણતરી અને અપૂર્ણ Excel export માટે `admin-reports` Edge Functionનું આ update deploy કરવું જરૂરી છે.</p>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
       {busy && <p role="status">Report તૈયાર થાય છે…</p>}
+      {report && <div className="report-print-heading">
+        <h2>FLN Assessment Report</h2>
+        <p>{selectedFilterText}</p>
+        <p>Report generated: {new Date(report.generatedAt).toLocaleString()}</p>
+        <p>Details page {report.page} · schools {report.schoolPage}/{report.schoolPageCount} · students {report.page}/{report.entryPageCount}</p>
+      </div>}
+      {report && !reportEmpty && <p className="success no-print" role="status">Report સફળતાપૂર્વક તૈયાર થયું.</p>}
+      {reportEmpty && <p className="muted" role="status">પસંદ કરેલા filters માટે કોઈ assessment અથવા નોંધાયેલા વિદ્યાર્થી મળ્યા નથી.</p>}
       {report && (
         <>
+          <p className="muted report-filter-note">Status filter summary counts, student-wise rows અને exports પર લાગુ છે.</p>
           <div className="dash-kpis">
             <div className="dash-kpi"><span>શાળાઓ</span><b>{report.totals.schools}</b></div>
             <div className="dash-kpi"><span>નોંધાયેલા વિદ્યાર્થીઓ</span><b>{report.totals.enrolled}</b></div>
-            <div className="dash-kpi n"><span>એન્ટ્રી થયેલ</span><b>{report.totals.submitted}</b></div>
+            <div className="dash-kpi n"><span>મૂલ્યાંકન થયેલા વિદ્યાર્થી</span><b>{report.totals.assessed}</b></div>
+            <div className="dash-kpi n"><span>Assessment records</span><b>{report.totals.submitted}</b></div>
+            <div className="dash-kpi n"><span>પૂર્ણ assessment</span><b>{completionMetricsAvailable ? report.totals.complete : '—'}</b></div>
+            <div className="dash-kpi p"><span>અપૂર્ણ assessment</span><b>{completionMetricsAvailable ? report.totals.incomplete : '—'}</b></div>
             <div className="dash-kpi u"><span>બાકી</span><b>{report.totals.pending}</b></div>
             <div className="dash-kpi"><span>Completion</span><b>{report.totals.completionPercent}%</b></div>
+          </div>
+
+          <div className="report-rollups">
+            <div className="card dash-card">
+              <h3>જિલ્લા પ્રમાણે પ્રગતિ</h3>
+              {report.districts.length ? <div className="scroll dash-scroll"><table className="dash-table">
+                <thead><tr><th className="left">જિલ્લો</th><th>શાળાઓ</th><th>નોંધાયેલા</th><th>મૂલ્યાંકન થયેલા</th><th>Assessment records</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>બાકી</th><th>Completion %</th></tr></thead>
+                <tbody>{report.districts.map((row) => <tr key={row.district}>
+                  <td className="left">{row.district}</td><td>{row.schools}</td><td>{row.enrolled}</td><td>{row.assessed}</td>
+                  <td>{row.submitted}</td><td>{row.complete}</td><td>{row.incomplete}</td><td>{row.pending}</td><td>{row.completionPercent}%</td>
+                </tr>)}</tbody>
+              </table></div> : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી.</p>}
+            </div>
+            <div className="card dash-card">
+              <h3>બ્લોક પ્રમાણે પ્રગતિ</h3>
+              {report.blocks.length ? <div className="scroll dash-scroll"><table className="dash-table">
+                <thead><tr><th className="left">જિલ્લો</th><th className="left">બ્લોક</th><th>શાળાઓ</th><th>નોંધાયેલા</th><th>મૂલ્યાંકન થયેલા</th><th>Assessment records</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>બાકી</th><th>Completion %</th></tr></thead>
+                <tbody>{report.blocks.map((row) => <tr key={`${row.district}:${row.block}`}>
+                  <td className="left">{row.district}</td><td className="left">{row.block}</td><td>{row.schools}</td>
+                  <td>{row.enrolled}</td><td>{row.assessed}</td><td>{row.submitted}</td><td>{row.complete}</td><td>{row.incomplete}</td>
+                  <td>{row.pending}</td><td>{row.completionPercent}%</td>
+                </tr>)}</tbody>
+              </table></div> : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી.</p>}
+            </div>
           </div>
 
           <div className="card dash-card">
@@ -197,6 +326,17 @@ export default function AdminReports({ supabase, profile }) {
                 })}</tbody>
               </table></div>
             ) : <p className="muted">આ filters માટે હજી ડેટા ઉપલબ્ધ નથી.</p>}
+          </div>
+
+          <div className="card dash-card">
+            <h3>માસ પ્રમાણે મૂલ્યાંકન</h3>
+            {report.monthly.length ? <div className="scroll dash-scroll"><table className="dash-table">
+              <thead><tr><th className="left">Assessment month</th><th>નોંધાયેલા</th><th>એન્ટ્રી થયેલ</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>બાકી</th></tr></thead>
+              <tbody>{report.monthly.map((row) => <tr key={row.month}>
+                <td className="left">{row.month}</td><td>{row.enrolled}</td><td>{row.submitted}</td>
+                <td>{row.complete}</td><td>{row.incomplete}</td><td>{row.pending}</td>
+              </tr>)}</tbody>
+            </table></div> : <p className="muted">આ filters માટે માસવાર assessment ડેટા ઉપલબ્ધ નથી.</p>}
           </div>
 
           <div className="card dash-card">
@@ -230,27 +370,42 @@ export default function AdminReports({ supabase, profile }) {
           <div className="card dash-card">
             <h3>Student-wise assessment history (પાનું {report.page})</h3>
             <div className="scroll dash-scroll"><table className="dash-table">
-              <thead><tr><th>સાચવેલ સમય</th><th>Month</th><th className="left">શાળા</th><th className="left">વિદ્યાર્થી</th><th>ધોરણ</th><th>હા/કુલ</th><th className="wide">જવાબો</th></tr></thead>
+              <thead><tr><th>સાચવેલ સમય</th><th>Month</th><th className="left">શાળા</th><th className="left">વિદ્યાર્થી / ID</th><th>ધોરણ</th><th>સ્થિતિ</th><th>હા/કુલ</th><th className="wide">જવાબો</th></tr></thead>
               <tbody>{report.entries.map((item) => {
                 const ans = Object.entries(item.answers || {}).filter(([, value]) => typeof value === 'boolean');
                 return (
                   <tr key={`${item.studentId}-${item.month}-${item.dhoran}`}>
                     <td>{new Date(item.savedAt).toLocaleString()}</td><td>{item.month}</td>
-                    <td className="left">{item.schoolName}<small> · {item.schoolCode}</small></td><td className="left">{item.student}</td>
-                    <td>{CLASSES[item.dhoran]?.label || item.dhoran}</td>
+                    <td className="left">{item.schoolName}<small> · {item.schoolCode}</small></td>
+                    <td className="left">{item.student}<small> · {item.studentId}</small></td>
+                    <td>{CLASSES[item.dhoran]?.label || item.dhoran}</td><td>{item.complete ? 'પૂર્ણ' : 'અપૂર્ણ'}</td>
                     <td><b>{ans.filter(([, v]) => v).length}/{CLASSES[item.dhoran]?.total}</b></td>
                     <td><div className="ans-wrap">{ans.map(([number, value]) => <span key={number} className={`ans-chip ${value ? 'y' : 'n'}`}>{number}</span>)}</div></td>
                   </tr>
                 );
               })}</tbody>
             </table></div>
-            <div className="row between">
+            <div className="row between no-print">
               <button disabled={busy || page <= 1} onClick={() => setPage((current) => current - 1)}>← પાછળનું</button>
-              <span className="muted">શાળા pages: {report.schoolPage}/{report.schoolPageCount} · Entry pages: {report.page}/{report.entryPageCount}</span>
-              <button disabled={busy || (page >= report.schoolPageCount && page >= report.entryPageCount)} onClick={() => setPage((current) => current + 1)}>આગળનું →</button>
+              <span className="muted">શાળા {report.schoolPage}/{report.schoolPageCount} · Entry {report.page}/{report.entryPageCount} · Pending {report.pendingPage}/{report.pendingPageCount}</span>
+              <button disabled={busy || (page >= report.schoolPageCount && page >= report.entryPageCount && page >= report.pendingPageCount)} onClick={() => setPage((current) => current + 1)}>આગળનું →</button>
             </div>
             <p className="muted">લીલા = હા, લાલ = ના (વિધાન નંબર).</p>
           </div>
+
+          {(applied.status === 'all' || applied.status === 'pending') && (
+            <div className="card dash-card">
+              <h3>Pending assessment students</h3>
+              {report.pendingStudents.length ? <div className="scroll dash-scroll"><table className="dash-table">
+                <thead><tr><th>School ID</th><th className="left">શાળા</th><th className="left">જિલ્લો</th><th className="left">બ્લોક</th><th>ધોરણ</th><th className="left">વિદ્યાર્થી</th><th>Student ID</th></tr></thead>
+                <tbody>{report.pendingStudents.map((student) => <tr key={`${student.schoolCode}:${student.studentId}:${student.dhoran}`}>
+                  <td>{student.schoolCode}</td><td className="left">{student.schoolName}</td><td className="left">{student.district}</td>
+                  <td className="left">{student.block}</td><td>{CLASSES[student.dhoran]?.label || student.dhoran}</td>
+                  <td className="left">{student.studentName}</td><td>{student.studentId}</td>
+                </tr>)}</tbody>
+              </table></div> : <p className="muted">આ filters માટે pending વિદ્યાર્થી નથી.</p>}
+            </div>
+          )}
         </>
       )}
     </section>
@@ -260,12 +415,13 @@ export default function AdminReports({ supabase, profile }) {
 function SchoolRows({ rows }) {
   return (
     <div className="scroll dash-scroll"><table className="dash-table">
-      <thead><tr><th>કોડ</th><th className="left">શાળા</th><th className="left">જિલ્લો</th><th className="left">તાલુકો</th><th>નોંધાયેલા</th><th>એન્ટ્રી</th><th>Pending</th><th className="wide">પ્રગતિ</th></tr></thead>
+      <thead><tr><th>કોડ</th><th className="left">શાળા</th><th className="left">જિલ્લો</th><th className="left">તાલુકો</th><th>નોંધાયેલા</th><th>મૂલ્યાંકન થયેલા</th><th>Assessment records</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>Pending</th><th className="wide">પ્રગતિ</th></tr></thead>
       <tbody>{rows.map((item) => (
         <tr key={item.schoolId}>
           <td>{item.schoolCode}</td><td className="left">{item.schoolName}</td>
           <td className="left">{item.district}</td><td className="left">{item.taluka}</td><td>{item.enrolled}</td>
-          <td className="cn">{item.submitted}</td><td className="cu">{item.pending}</td>
+          <td>{item.assessed}</td><td className="cn">{item.submitted}</td>
+          <td>{Number.isFinite(item.complete) ? item.complete : '—'}</td><td className="cu">{Number.isFinite(item.incomplete) ? item.incomplete : '—'}</td><td>{item.pending}</td>
           <td><div className="dash-bar" title={`${item.completionPercent}%`}><i className="n" style={{ width: `${item.completionPercent}%` }} /></div><small>{item.completionPercent}%</small></td>
         </tr>
       ))}</tbody>

@@ -1,4 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  accountManagementScope,
+  canManageAccount,
+  schoolMatchesManagementScope,
+} from '../_shared/accountManagementAuthorization.js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,12 +48,13 @@ async function handle(request: Request) {
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) return response(401, { error: 'Admin session માન્ય નથી.' });
   const { data: actor, error: actorError } = await admin.from('profiles')
-    .select('role,active').eq('id', authData.user.id).maybeSingle();
+    .select('role,active,district_code,block_code').eq('id', authData.user.id).maybeSingle();
   if (actorError) {
     console.error('Unable to verify scoped-account caller:', actorError.message);
     return response(500, { error: 'Admin અધિકાર ચકાસી શકાયા નથી.' });
   }
-  if (actor?.role !== 'admin' || !actor.active) return response(403, { error: 'સક્રિય Admin અધિકાર જરૂરી છે.' });
+  const scope = accountManagementScope(actor);
+  if (!scope) return response(403, { error: 'સક્રિય અને માન્ય account-management scope જરૂરી છે.' });
 
   const { error: schemaError } = await admin.from('profiles')
     .select('district_code,block_code,must_change_password').limit(0);
@@ -74,6 +80,9 @@ async function handle(request: Request) {
   const code = payload.code;
   const districtCode = payload.role === 'district' ? code : code.slice(0, 4);
   const blockCode = payload.role === 'block' ? code : null;
+  if (!canManageAccount(scope, payload.role, districtCode, blockCode)) {
+    return response(403, { error: 'આ account તમારા અધિકૃત scopeમાં બનાવી શકાતું નથી.' });
+  }
   const { error: auditSchemaError } = await admin.from('admin_account_audit').select('id').limit(0);
   if (auditSchemaError) {
     console.error('Central account audit schema is unavailable:', auditSchemaError.message);
@@ -94,7 +103,7 @@ async function handle(request: Request) {
     if (error) throw error;
   }
   const { data: matchingSchool, error: schoolError } = await admin.from('schools')
-    .select('id').like('code', `${code}%`).eq('active', true).limit(1).maybeSingle();
+    .select('id,code').like('code', `${code}%`).eq('active', true).limit(1).maybeSingle();
   if (schoolError) {
     console.error('Unable to validate regional code against schools:', schoolError.message);
     await audit(null, 'failed', 'school_scope_lookup_failed');
@@ -104,10 +113,15 @@ async function handle(request: Request) {
     await audit(null, 'failed', 'active_school_missing');
     return response(404, { error: 'આ code સાથે મેળ ખાતી સક્રિય શાળા મળી નથી.' });
   }
+  if (!schoolMatchesManagementScope(scope, matchingSchool.code)) {
+    await audit(null, 'failed', 'school_scope_mismatch');
+    return response(403, { error: 'આ વિસ્તાર તમારા અધિકૃત scope બહાર છે.' });
+  }
 
   const scopeColumn = payload.role === 'district' ? 'district_code' : 'block_code';
   const { data: existingProfile, error: existingError } = await admin.from('profiles')
-    .select('id,email,active').eq('role', payload.role).eq(scopeColumn, code).maybeSingle();
+    .select('id,email,active').eq('role', payload.role).eq(scopeColumn, code)
+    .eq('district_code', districtCode).maybeSingle();
   if (existingError) {
     console.error('Unable to inspect existing scoped profile:', existingError.message);
     await audit(null, 'failed', 'profile_lookup_failed');

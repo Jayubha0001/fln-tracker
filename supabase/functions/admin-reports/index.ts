@@ -1,6 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import * as XLSX from 'npm:@e965/xlsx@0.20.3';
-import { buildPendingStudents, buildReportMetrics } from '../_shared/reportMetrics.js';
+import {
+  assessmentCompletion,
+  buildPendingStudents,
+  buildFilteredReportMetrics,
+  buildReportMetrics,
+  deduplicateAssessmentEntries,
+  filterAssessmentEntries,
+} from '../_shared/reportMetrics.js';
 import { GRADE_RULES } from '../_shared/assessmentRules.js';
 import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
 import { canAccessSchoolReport, reportScope } from '../_shared/reportAuthorization.js';
@@ -24,6 +31,7 @@ type Filters = {
   block?: string;
   dhoran?: string;
   month?: string;
+  status?: 'all' | 'complete' | 'incomplete' | 'pending';
 };
 
 type School = {
@@ -33,6 +41,8 @@ type School = {
   district: string;
   block: string;
 };
+
+type SchoolMetric = ReturnType<typeof buildReportMetrics>['schools'][number];
 
 type Entry = {
   student_id: string;
@@ -83,6 +93,9 @@ function validateFilters(value: unknown): Filters | string {
   if (days > MAX_RANGE_DAYS) return `એક reportમાં વધુમાં વધુ ${MAX_RANGE_DAYS} દિવસ પસંદ કરો.`;
   if (filters.dhoran && !GRADES.includes(filters.dhoran)) return 'ધોરણ B, 1 અથવા 2 પસંદ કરો.';
   if (filters.month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(filters.month)) return 'Assessment month YYYY-MM હોવો જોઈએ.';
+  if (filters.status && !['all', 'complete', 'incomplete', 'pending'].includes(filters.status)) {
+    return 'Assessment status all, complete, incomplete અથવા pending હોવો જોઈએ.';
+  }
   if (filters.schoolCode && !/^\d{11}$/.test(filters.schoolCode.trim())) return 'School Code 11 અંકનો હોવો જોઈએ.';
   if (filters.schoolId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(filters.schoolId)) {
     return 'School UUID માન્ય નથી.';
@@ -96,6 +109,7 @@ function validateFilters(value: unknown): Filters | string {
     block: typeof filters.block === 'string' ? filters.block.trim() : '',
     dhoran: filters.dhoran,
     month: filters.month,
+    status: filters.status || 'all',
   };
 }
 
@@ -121,7 +135,7 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
   if (filters.schoolCode) schoolQuery.eq('code', filters.schoolCode);
   if (filters.district) schoolQuery.eq('district', filters.district);
   if (filters.block) schoolQuery.eq('block', filters.block);
-  const schools = await loadRows(schoolQuery);
+  const schools = await loadRows(schoolQuery, PAGE_SIZE, MAX_REPORT_ROWS);
   const schoolMap = new Map((schools as School[]).map((school) => [school.id, school]));
 
   const rawEntries: any[] = [];
@@ -141,8 +155,8 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
     const batch = await loadRows(entryQuery, PAGE_SIZE, MAX_REPORT_ROWS - rawEntries.length);
     rawEntries.push(...batch);
   }
-  rawEntries.sort((left, right) => left.updated_at.localeCompare(right.updated_at));
-  const studentIds = [...new Set(rawEntries.map((entry) => entry.student_id))];
+  const canonicalEntries = deduplicateAssessmentEntries(rawEntries);
+  const studentIds = [...new Set(canonicalEntries.map((entry) => entry.student_id))];
   const studentMap = new Map<string, { name: string; school_id: string }>();
   for (let offset = 0; offset < studentIds.length; offset += 500) {
     const ids = studentIds.slice(offset, offset + 500);
@@ -150,7 +164,7 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
     if (error) throw error;
     for (const student of data || []) studentMap.set(student.id, student);
   }
-  const entries: Entry[] = rawEntries.flatMap((entry) => {
+  const entries: Entry[] = canonicalEntries.flatMap((entry) => {
     const student = studentMap.get(entry.student_id);
     const school = schoolMap.get(entry.school_id);
     return student && school && student.school_id === school.id
@@ -178,7 +192,7 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
     }
   }
 
-  const metrics = buildReportMetrics(
+  const allMetrics = buildReportMetrics(
     allSchools,
     enrollmentBySchoolGrade,
     entries,
@@ -190,12 +204,99 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
     entries,
     filters.dhoran ? [filters.dhoran] : GRADES,
   );
-
-  return {
+  const visibleEntries = filterAssessmentEntries(entries, filters.status);
+  const metrics = buildFilteredReportMetrics(
+    allSchools,
+    enrollmentBySchoolGrade,
     entries,
     pendingStudents,
+    filters.dhoran ? [filters.dhoran] : GRADES,
+    filters.status,
+  );
+  const monthlyCounts = new Map<string, {
+    submitted: Set<string>;
+    complete: number;
+    incomplete: number;
+  }>();
+  for (const entry of visibleEntries) {
+    const month = monthlyCounts.get(entry.month) || {
+      submitted: new Set<string>(),
+      complete: 0,
+      incomplete: 0,
+    };
+    month.submitted.add(`${entry.school_id}:${entry.student_id}:${entry.dhoran}`);
+    month[assessmentCompletion(entry) ? 'complete' : 'incomplete'] += 1;
+    monthlyCounts.set(entry.month, month);
+  }
+  if (filters.status === 'pending') {
+    monthlyCounts.clear();
+    monthlyCounts.set(filters.month || 'All', { submitted: new Set(), complete: 0, incomplete: 0 });
+  } else if (filters.month && !monthlyCounts.has(filters.month)) {
+    monthlyCounts.set(filters.month, { submitted: new Set(), complete: 0, incomplete: 0 });
+  }
+  const monthly = [...monthlyCounts.entries()].sort(([left], [right]) => left.localeCompare(right))
+    .map(([month, counts]) => ({
+      month,
+      enrolled: metrics.totals.enrolled,
+      submitted: counts.submitted.size,
+      complete: counts.complete,
+      incomplete: counts.incomplete,
+      pending: filters.status === 'all'
+        ? Math.max(0, allMetrics.totals.enrolled - counts.submitted.size)
+        : 0,
+    }));
+  const districts = aggregateSchoolMetrics(metrics.schools, (school) => school.district);
+  const blocks = aggregateSchoolMetrics(
+    metrics.schools,
+    (school) => `${school.district}\u0000${school.taluka}`,
+    (school) => ({ district: school.district, block: school.taluka }),
+  );
+
+  return {
+    entries: visibleEntries,
+    pendingStudents: filters.status === 'all' || filters.status === 'pending' ? pendingStudents : [],
+    monthly,
+    districts,
+    blocks,
     ...metrics,
   };
+}
+
+function aggregateSchoolMetrics(
+  schools: SchoolMetric[],
+  keyFor: (school: SchoolMetric) => string,
+  labelsFor: (school: SchoolMetric) => Record<string, string> = (school) => ({ district: school.district }),
+) {
+  const grouped = new Map<string, Record<string, string | number>>();
+  for (const school of schools) {
+    const key = keyFor(school);
+    const row = grouped.get(key) || {
+      ...labelsFor(school),
+      schools: 0,
+      enrolled: 0,
+      assessed: 0,
+      submitted: 0,
+      complete: 0,
+      incomplete: 0,
+      pending: 0,
+    };
+    row.schools = Number(row.schools) + 1;
+    row.enrolled = Number(row.enrolled) + school.enrolled;
+    row.assessed = Number(row.assessed) + school.assessed;
+    row.submitted = Number(row.submitted) + school.submitted;
+    row.complete = Number(row.complete) + school.complete;
+    row.incomplete = Number(row.incomplete) + school.incomplete;
+    row.pending = Number(row.pending) + school.pending;
+    grouped.set(key, row);
+  }
+  return [...grouped.values()].map((row) => ({
+    ...row,
+    completionPercent: Number(row.enrolled)
+      ? Math.round(Number(row.submitted) * 1000 / Number(row.enrolled)) / 10
+      : 0,
+  })).sort((left, right) =>
+    String(left.district).localeCompare(String(right.district))
+    || String(left.block || '').localeCompare(String(right.block || '')));
 }
 
 async function buildSchoolYearReport(client: ReturnType<typeof createClient>, schoolId: string, scope: ReportScope) {
@@ -284,12 +385,25 @@ function schoolYearWorkbook(report: NonNullable<Awaited<ReturnType<typeof buildS
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
 }
 
+function appendWorkbookTable(
+  workbook: XLSX.WorkBook,
+  name: string,
+  headers: string[],
+  rows: (string | number | boolean)[][],
+  widths: number[],
+) {
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  sheet['!cols'] = widths.map((wch) => ({ wch }));
+  sheet['!rows'] = [{ hpt: 26 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, name);
+}
+
 function makeWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: Filters) {
   const workbook = XLSX.utils.book_new();
   const statementCount = 30;
   const headers = [
     'School Code', 'School Name', 'District', 'Taluka', 'Student Name', 'Student UUID',
-    'Grade', 'Assessment Date', 'Assessment Month', 'Saved At',
+    'Grade', 'Assessment Date', 'Assessment Month', 'Saved At', 'Assessment Status', 'Answered Outcomes',
     ...Array.from({ length: statementCount }, (_, index) => `Outcome ${index + 1}`),
   ];
   const rows = (entries: Entry[]) => entries.map((entry) => [
@@ -303,77 +417,135 @@ function makeWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: 
     entry.assessment_date || '',
     entry.month,
     entry.updated_at,
+    assessmentCompletion(entry) ? 'Complete' : 'Incomplete',
+    Object.values(entry.answers || {}).filter((value) => typeof value === 'boolean').length,
     ...Array.from({ length: statementCount }, (_, index) => {
       const value = entry.answers?.[String(index + 1)];
       return value === undefined ? '' : value ? 'હા' : 'ના';
     }),
   ]);
 
-  XLSX.utils.book_append_sheet(
+  const detailWidths = [14, 28, 22, 22, 28, 38, 12, 15, 16, 23, 16, 18, ...Array(statementCount).fill(12)];
+  appendWorkbookTable(
     workbook,
-    XLSX.utils.aoa_to_sheet([headers, ...rows(report.entries)]),
     'Consolidated',
+    headers,
+    rows(report.entries),
+    detailWidths,
   );
   for (const grade of GRADES) {
     const gradeEntries = report.entries.filter((entry) => entry.dhoran === grade);
-    XLSX.utils.book_append_sheet(
+    appendWorkbookTable(
       workbook,
-      XLSX.utils.aoa_to_sheet([headers, ...rows(gradeEntries)]),
       `ધોરણ ${grade}`,
+      headers,
+      rows(gradeEntries),
+      detailWidths,
     );
   }
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.schools.map((row) => ({
-    'School Code': row.schoolCode,
-    'School Name': row.schoolName,
-    'District': row.district,
-    'Taluka': row.taluka,
-    'Enrolled': row.enrolled,
-    'Submitted': row.submitted,
-    'Pending': row.pending,
-    'Completion %': row.completionPercent,
-  }))), 'School status');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.outcomes.map((row) => ({
-    'Grade': row.dhoran,
-    'Learning Outcome': row.outcome,
-    'Yes': row.yes,
-    'No': row.no,
-    'Answered': row.answered,
-  }))), 'Learning outcomes');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.daily.map((row) => ({
-    'Saved Date': row.date,
-    'Submitted Entries': row.submitted,
-  }))), 'Day-wise');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
-    { Metric: 'Schools', Value: report.totals.schools },
-    { Metric: 'Enrolled', Value: report.totals.enrolled },
-    { Metric: 'Submitted entries', Value: report.totals.submitted },
-    { Metric: 'Pending', Value: report.totals.pending },
-    { Metric: 'Completion percent', Value: report.totals.completionPercent },
-    { Metric: 'Submission timestamp date filter', Value: `${filters.startDate} to ${filters.endDate}` },
-    { Metric: 'Assessment date', Value: 'Separate column; historical NULL means unknown.' },
-  ]), 'Totals');
+  appendWorkbookTable(workbook, 'District status', [
+    'District', 'Schools', 'Enrolled', 'Assessed students', 'Assessment records', 'Complete', 'Incomplete', 'Pending', 'Completion %',
+  ], report.districts.map((row) => [
+    String(row.district), Number(row.schools), Number(row.enrolled), Number(row.assessed), Number(row.submitted),
+    Number(row.complete), Number(row.incomplete), Number(row.pending), Number(row.completionPercent),
+  ]), [24, 12, 14, 18, 18, 14, 14, 14, 16]);
+  appendWorkbookTable(workbook, 'Block status', [
+    'District', 'Block', 'Schools', 'Enrolled', 'Assessed students', 'Assessment records', 'Complete', 'Incomplete', 'Pending', 'Completion %',
+  ], report.blocks.map((row) => [
+    String(row.district), String(row.block), Number(row.schools), Number(row.enrolled), Number(row.assessed),
+    Number(row.submitted), Number(row.complete), Number(row.incomplete), Number(row.pending),
+    Number(row.completionPercent),
+  ]), [24, 24, 12, 14, 18, 18, 14, 14, 14, 16]);
+  appendWorkbookTable(workbook, 'School status', [
+    'School Code', 'School Name', 'District', 'Taluka', 'Enrolled', 'Assessed students', 'Assessment records',
+    'Complete', 'Incomplete', 'Pending', 'Completion %',
+  ], report.schools.map((row) => [
+    row.schoolCode, row.schoolName, row.district, row.taluka, row.enrolled, row.assessed, row.submitted,
+    row.complete, row.incomplete, row.pending, row.completionPercent,
+  ]), [14, 28, 22, 22, 14, 18, 18, 14, 14, 14, 16]);
+  appendWorkbookTable(workbook, 'Learning outcomes', [
+    'Grade', 'Learning Outcome', 'Yes', 'No', 'Answered',
+  ], report.outcomes.map((row) => [
+    row.dhoran, row.outcome, row.yes, row.no, row.answered,
+  ]), [12, 20, 12, 12, 14]);
+  appendWorkbookTable(workbook, 'Day-wise', [
+    'Saved Date', 'Submitted Entries',
+  ], report.daily.map((row) => [row.date, row.submitted]), [18, 20]);
+  appendWorkbookTable(workbook, 'Monthly', [
+    'Assessment Month', 'Enrolled', 'Submitted', 'Complete', 'Incomplete', 'Pending',
+  ], report.monthly.map((row) => [
+    row.month, row.enrolled, row.submitted, row.complete, row.incomplete, row.pending,
+  ]), [20, 14, 14, 14, 14, 14]);
+  appendWorkbookTable(workbook, 'Pending students', [
+    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Student UUID', 'Grade',
+  ], report.pendingStudents.map((student) => [
+    student.schoolCode, student.schoolName, student.district, student.block,
+    student.studentName, student.studentId, student.dhoran,
+  ]), [14, 28, 22, 22, 28, 38, 12]);
+  appendWorkbookTable(workbook, 'Totals', ['Metric', 'Value'], [
+    ['Schools', report.totals.schools],
+    ['Enrolled', report.totals.enrolled],
+    ['Assessed students', report.totals.assessed],
+    ['Assessment records', report.totals.submitted],
+    ['Complete assessments', report.totals.complete],
+    ['Incomplete assessments', report.totals.incomplete],
+    ['Pending', report.totals.pending],
+    ['Completion percent', report.totals.completionPercent],
+    ['Saved-at date filter', `${filters.startDate} to ${filters.endDate}`],
+    ['Assessment month', filters.month || 'All'],
+    ['Assessment status', filters.status || 'all'],
+    ['Assessment date', 'Separate column; historical NULL means unknown.'],
+  ], [30, 72]);
 
+  return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
+}
+
+function makeIncompleteWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: Filters) {
+  const workbook = XLSX.utils.book_new();
+  const incomplete = report.entries.filter((entry) => !assessmentCompletion(entry));
+  appendWorkbookTable(workbook, 'Incomplete assessments', [
+    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Student UUID',
+    'Grade', 'Assessment Month', 'Answered Outcomes', 'Required Outcomes', 'Saved At',
+  ], incomplete.map((entry) => [
+    entry.school.code,
+    entry.school.name,
+    entry.school.district,
+    entry.school.block,
+    entry.student.name,
+    entry.student_id,
+    entry.dhoran,
+    entry.month,
+    Object.values(entry.answers || {}).filter((value) => typeof value === 'boolean').length,
+    GRADE_RULES[entry.dhoran]?.statementIds.length || 0,
+    entry.updated_at,
+  ]), [14, 28, 22, 22, 28, 38, 12, 16, 18, 18, 23]);
+  appendWorkbookTable(workbook, 'Filters', ['Metric', 'Value'], [
+    ['Incomplete assessments', incomplete.length],
+    ['Saved-at date range', `${filters.startDate} to ${filters.endDate}`],
+    ['Grade filter', filters.dhoran || 'All'],
+    ['Assessment month filter', filters.month || 'All'],
+    ['Assessment status', filters.status || 'all'],
+    ['Definition', 'At least one required learning outcome has no boolean answer.'],
+  ], [30, 72]);
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
 }
 
 function makePendingWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: Filters) {
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(report.pendingStudents.map((student) => ({
-    'School Code': student.schoolCode,
-    'School Name': student.schoolName,
-    District: student.district,
-    Block: student.block,
-    'Student Name': student.studentName,
-    'Student UUID': student.studentId,
-    Grade: student.dhoran,
-  }))), 'Pending students');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
-    { Metric: 'Pending students', Value: report.pendingStudents.length },
-    { Metric: 'Saved-at date range', Value: `${filters.startDate} to ${filters.endDate}` },
-    { Metric: 'Grade filter', Value: filters.dhoran || 'All' },
-    { Metric: 'Assessment month filter', Value: filters.month || 'All' },
-    { Metric: 'Pending definition', Value: 'Enrolled students without an entry matching the selected date range, grade and assessment month.' },
-  ]), 'Filters');
+  appendWorkbookTable(workbook, 'Pending students', [
+    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Student UUID', 'Grade',
+  ], report.pendingStudents.map((student) => [
+    student.schoolCode, student.schoolName, student.district, student.block,
+    student.studentName, student.studentId, student.dhoran,
+  ]), [14, 28, 22, 22, 28, 38, 12]);
+  appendWorkbookTable(workbook, 'Filters', ['Metric', 'Value'], [
+    ['Pending students', report.pendingStudents.length],
+    ['Saved-at date range', `${filters.startDate} to ${filters.endDate}`],
+    ['Grade filter', filters.dhoran || 'All'],
+    ['Assessment month filter', filters.month || 'All'],
+    ['Assessment status', filters.status || 'all'],
+    ['Definition', 'Enrolled students without an entry matching the selected date range, grade and assessment month.'],
+  ], [30, 90]);
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
 }
 
@@ -435,7 +607,7 @@ Deno.serve(async (request) => {
     const filters = validateFilters(body.filters);
     if (typeof filters === 'string') return jsonResponse(400, { error: filters });
     const report = await buildReport(userClient, filters, scope);
-    if (body.action === 'export' || body.action === 'pending-export') {
+    if (body.action === 'export' || body.action === 'pending-export' || body.action === 'incomplete-export') {
       if (body.action === 'pending-export') {
         return new Response(makePendingWorkbook(report, filters), {
           headers: {
@@ -443,6 +615,16 @@ Deno.serve(async (request) => {
             'Cache-Control': 'no-store',
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition': `attachment; filename="fln-pending-${filters.startDate}-${filters.endDate}.xlsx"`,
+          },
+        });
+      }
+      if (body.action === 'incomplete-export') {
+        return new Response(makeIncompleteWorkbook(report, filters), {
+          headers: {
+            ...corsHeaders,
+            'Cache-Control': 'no-store',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename="fln-incomplete-${filters.startDate}-${filters.endDate}.xlsx"`,
           },
         });
       }
@@ -464,11 +646,17 @@ Deno.serve(async (request) => {
       filters,
       totals: report.totals,
       daily: report.daily,
+      monthly: report.monthly,
       outcomes: report.outcomes,
+      districts: report.districts,
+      blocks: report.blocks,
       schools: report.schools.slice((page - 1) * pageSize, page * pageSize),
       schoolPage: page,
       schoolPageSize: pageSize,
       schoolPageCount: Math.max(1, Math.ceil(report.schools.length / pageSize)),
+      pendingStudents: report.pendingStudents.slice((page - 1) * pageSize, page * pageSize),
+      pendingPage: page,
+      pendingPageCount: Math.max(1, Math.ceil(report.pendingStudents.length / pageSize)),
       entries: report.entries.slice((page - 1) * pageSize, page * pageSize).map((entry) => ({
         schoolCode: entry.school.code,
         schoolName: entry.school.name,
@@ -481,14 +669,16 @@ Deno.serve(async (request) => {
         month: entry.month,
         savedAt: entry.updated_at,
         answers: entry.answers,
+        complete: assessmentCompletion(entry),
       })),
       entryPageCount: Math.max(1, Math.ceil(report.entries.length / pageSize)),
       page,
+      generatedAt: new Date().toISOString(),
     });
   } catch (cause) {
     if (cause instanceof Error && cause.message.startsWith('REPORT_TOO_LARGE:')) {
       return jsonResponse(413, {
-        error: `આ filterમાં ${MAX_REPORT_ROWS.toLocaleString()}થી વધુ entries છે. નાની date range, month, grade અથવા school filter પસંદ કરો.`,
+        error: `આ filterમાં ${MAX_REPORT_ROWS.toLocaleString()}થી વધુ records છે. નાની date range, month, grade અથવા school filter પસંદ કરો.`,
         maxRows: MAX_REPORT_ROWS,
       });
     }

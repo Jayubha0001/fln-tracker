@@ -11,6 +11,7 @@ import ScopedDashboard from './pages/ScopedDashboard.jsx';
 import SchoolYearReportButton from './components/SchoolYearReportButton.jsx';
 import DashboardLayout from './components/DashboardLayout.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
+import AdminReports from './pages/AdminReports.jsx';
 
 const nowKey = new Date().toISOString().slice(0, 7);
 
@@ -233,10 +234,18 @@ function SchoolTracker({ supabase, school, onSignOut }) {
             </select>
           </label>
         </div>
-        {tab === 'dashboard' && <AdminDashboard supabase={supabase} profile={{ role: 'school' }} />}
+        {tab === 'dashboard' && <AdminDashboard supabase={supabase} profile={{
+          role: 'school',
+          school_id: school.id,
+          district: school.district,
+          block: school.block,
+          school_code: school.code,
+          school_name: school.name,
+        }} />}
         {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
         {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />}
         {tab === 'summary' && <SchoolSummary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
+        {tab === 'reports' && <AdminReports supabase={supabase} profile={{ role: 'school' }} />}
         {tab === 'annual-report' && (
           <section className="card">
             <h2>વાર્ષિક શાળા FLN Report</h2>

@@ -54,9 +54,14 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
       const ids = new Set(sts.map((s) => s.id));
       const gEntries = entries.filter((e) => e.dhoran === g && ids.has(e.student_id));
       const monthEntries = new Map(gEntries.filter((e) => e.month === month).map((e) => [e.student_id, e]));
+      const entriesByStudentMonth = new Map(gEntries.map((entry) => [`${entry.student_id}:${entry.month}`, entry]));
       const rows = sts.map((student) => {
         const entry = monthEntries.get(student.id);
-        return { student, entry, r: calc(g, entry?.answers) };
+        const history = MONTHS.map((item) => {
+          const monthEntry = entriesByStudentMonth.get(`${student.id}:${item.key}`) || null;
+          return { ...item, entry: monthEntry, result: calc(g, monthEntry?.answers) };
+        });
+        return { student, entry, r: calc(g, entry?.answers), history };
       });
       const cnt = { U: 0, P: 0, N: 0 };
       rows.forEach((x) => { if (x.r.cat) cnt[x.r.cat] += 1; });
@@ -70,7 +75,16 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
         const yes = vals.filter((v) => v === true).length;
         return { no: i + 1, area: st.area, text: st.text, yes, answered: vals.length, p: vals.length ? pct(yes, vals.length) : null };
       });
-      byGrade[g] = { total: sts.length, saved: monthEntries.size, rows, cnt, ledger, skills, register: sts.length };
+      byGrade[g] = {
+        total: sts.length,
+        saved: monthEntries.size,
+        incomplete: rows.filter((row) => row.entry && !row.r.cat).length,
+        rows,
+        cnt,
+        ledger,
+        skills,
+        register: sts.length,
+      };
     }
     return byGrade;
   }, [students, entries, month]);
@@ -81,10 +95,11 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
   const info = CLASSES[dhoran];
   const allTotal = GRADES.reduce((t, k) => t + data[k].total, 0);
   const allSaved = GRADES.reduce((t, k) => t + data[k].saved, 0);
+  const allIncomplete = GRADES.reduce((t, k) => t + data[k].incomplete, 0);
   const allN = GRADES.reduce((t, k) => t + data[k].cnt.N, 0);
   const weakest = g.skills.filter((s) => s.p !== null).sort((a, b) => a.p - b.p).slice(0, 3);
   const list = tab === 'T'
-    ? g.rows.filter((x) => !x.entry)
+    ? g.rows.filter((x) => !x.entry || !x.r.cat)
     : g.rows.filter((x) => x.r.cat === tab);
 
   function exportExcel() {
@@ -116,8 +131,9 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
       <div className="dash-kpis">
         <div className="dash-kpi"><span>કુલ વિદ્યાર્થી</span><b>{allTotal}</b><small>3 ધોરણ</small></div>
         <div className="dash-kpi"><span>{monthLabel(month)} એન્ટ્રી</span><b>{allSaved}</b><small>{pct(allSaved, allTotal)}% પૂર્ણ</small></div>
+        <div className="dash-kpi p"><span>અપૂર્ણ મૂલ્યાંકન</span><b>{allIncomplete}</b><small>બધા જવાબ હજી નોંધાયા નથી</small></div>
         <div className="dash-kpi n"><span>નિપુણ</span><b>{allN}</b><small>{pct(allN, allTotal)}% વિદ્યાર્થી</small></div>
-        <div className="dash-kpi u"><span>બાકી એન્ટ્રી</span><b>{allTotal - allSaved}</b></div>
+        <div className="dash-kpi u"><span>બાકી assessment</span><b>{allTotal - allSaved}</b><small>હાલના મહિને entry નથી</small></div>
       </div>
 
       <div className="ss-grades">
@@ -179,18 +195,49 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
       <div className="card">
         <h3>👥 વિદ્યાર્થી યાદી – {info.label}</h3>
         <div className="entry-filter">
-          {[['U', `ઉદયમાન (${g.cnt.U})`], ['P', `પ્રગતિશીલ (${g.cnt.P})`], ['N', `નિપુણ (${g.cnt.N})`], ['T', `બાકી (${g.total - g.saved})`]].map(([k, label]) => (
+          {[['U', `ઉદયમાન (${g.cnt.U})`], ['P', `પ્રગતિશીલ (${g.cnt.P})`], ['N', `નિપુણ (${g.cnt.N})`], ['T', `બાકી / અપૂર્ણ (${g.total - g.cnt.U - g.cnt.P - g.cnt.N})`]].map(([k, label]) => (
             <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
           ))}
         </div>
         <ul className="stu-list">
           {list.map((x) => (
-            <li key={x.student.id} className={`stu ${x.r.cat ? `c-${x.r.cat.toLowerCase()}` : ''}`}>
-              <span className="stu-no">{g.rows.indexOf(x) + 1}</span><span className="stu-name">{x.student.name}</span>
-              <span className="badge todo">{x.entry ? `${x.r.yes}/${x.r.total}` : 'બાકી'}</span>
+            <li key={x.student.id} className="student-progress-row">
+              <div className={`stu ${x.r.cat ? `c-${x.r.cat.toLowerCase()}` : ''}`}>
+                <span className="stu-no">{g.rows.indexOf(x) + 1}</span><span className="stu-name">{x.student.name}</span>
+                <span className="badge todo">{x.entry ? `${x.r.done}/${x.r.total}` : 'બાકી'}</span>
+              </div>
+              <details className="student-progress-details">
+                <summary>માસિક પ્રગતિ અને કૌશલ્ય</summary>
+                <div className="scroll">
+                  <table className="student-month-history">
+                    <thead><tr><th>માસ</th><th>સ્થિતિ</th><th>હા / પૂર્ણ</th></tr></thead>
+                    <tbody>{x.history.map((item) => (
+                      <tr key={item.key}>
+                        <td>{item.label}</td>
+                        <td>{!item.entry ? 'બાકી' : item.result.cat ? CAT[item.result.cat].label : 'અપૂર્ણ'}</td>
+                        <td>{item.entry ? `${item.result.yes}/${item.result.total}` : '—'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                <h4>{monthLabel(month)}ના કૌશલ્ય પરિણામ</h4>
+                {!x.entry && <p className="muted">આ મહિના માટે assessment entry નથી.</p>}
+                {x.entry && x.r.cat === 'U' && <p className="muted">વર્તમાન પરિણામ ઉદયમાન છે; અનુસરણ માટે કૌશલ્ય પરિણામો જુઓ.</p>}
+                {x.entry && <ul className="student-skill-progress">
+                  {(STATEMENTS[dhoran] || []).map((statement) => {
+                    const answer = x.entry.answers?.[statement.n];
+                    return (
+                      <li key={statement.n} className={answer === false ? 'needs-follow-up' : ''}>
+                        <b>#{statement.n} · {answer === true ? 'હા' : answer === false ? 'ના' : 'જવાબ બાકી'}</b>
+                        <span>{statement.area} · {statement.text}</span>
+                      </li>
+                    );
+                  })}
+                </ul>}
+              </details>
             </li>
           ))}
-          {!list.length && <li className="muted">આ વર્ગમાં કોઈ વિદ્યાર્થી નથી.</li>}
+          {!list.length && <li className="muted">આ filter માટે કોઈ વિદ્યાર્થી નથી.</li>}
         </ul>
       </div>
     </div>

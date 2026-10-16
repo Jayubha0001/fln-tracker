@@ -1,4 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  accountManagementScope,
+  schoolMatchesManagementScope,
+} from '../_shared/accountManagementAuthorization.js';
+import { schoolMatchesBlockScope } from '../_shared/scopedAccountManagement.js';
 import { resetTemporaryPassword } from '../_shared/temporaryPassword.js';
 
 const corsHeaders = {
@@ -57,18 +62,17 @@ Deno.serve(async (request) => {
 
   const { data: actor, error: actorError } = await admin
     .from('profiles')
-    .select('role, active')
+    .select('role, active, district_code, block_code')
     .eq('id', actorId)
     .maybeSingle();
   if (actorError) {
     console.error('Unable to verify reset caller:', actorError.message);
     return response(500, { error: 'Admin અધિકાર ચકાસી શકાયા નથી.' });
   }
-  if (actor?.role !== 'admin' || !actor.active) {
-    return response(403, { error: 'Password reset માટે સક્રિય Admin અધિકાર જરૂરી છે.' });
-  }
+  const scope = accountManagementScope(actor);
+  if (!scope) return response(403, { error: 'Password reset માટે સક્રિય અને માન્ય account scope જરૂરી છે.' });
 
-  let payload: { schoolId?: unknown };
+  let payload: { schoolId?: unknown; expectedBlockCode?: unknown };
   try {
     payload = await request.json();
   } catch {
@@ -77,6 +81,9 @@ Deno.serve(async (request) => {
   if (typeof payload.schoolId !== 'string'
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.schoolId)) {
     return response(400, { error: 'માન્ય school UUID આપો.' });
+  }
+  if (typeof payload.expectedBlockCode !== 'string' || !/^\d{6}$/.test(payload.expectedBlockCode)) {
+    return response(400, { error: 'માન્ય Block Code જરૂરી છે.' });
   }
   const { error: centralAuditSchemaError } = await admin.from('admin_account_audit').select('id').limit(0);
   if (centralAuditSchemaError) {
@@ -125,6 +132,27 @@ Deno.serve(async (request) => {
       detail_code: detailCode,
     });
     if (error) throw error;
+  }
+
+  if (!schoolMatchesBlockScope(school.code, payload.expectedBlockCode)) {
+    try {
+      await audit('failed', 'block_scope_mismatch');
+      await auditCentral(null, 'failed', 'block_scope_mismatch');
+    } catch (auditError) {
+      console.error('Unable to audit school block-scope reset rejection:', auditError);
+      return response(500, { error: 'Block scope mismatch છે અને audit log સાચવાયો નથી; password reset કરાયો નથી.' });
+    }
+    return response(403, { error: 'આ શાળા આપેલા Blockની નથી; password reset કરાયો નથી.' });
+  }
+  if (!schoolMatchesManagementScope(scope, school.code)) {
+    try {
+      await audit('failed', 'account_scope_forbidden');
+      await auditCentral(null, 'failed', 'account_scope_forbidden');
+    } catch (auditError) {
+      console.error('Unable to audit out-of-scope school password reset:', auditError);
+      return response(500, { error: 'આ શાળા તમારા scope બહાર છે અને audit log સાચવાયો નથી; password reset કરાયો નથી.' });
+    }
+    return response(403, { error: 'આ શાળા તમારા અધિકૃત scope બહાર છે; password reset કરાયો નથી.' });
   }
 
   if (!school.active) {

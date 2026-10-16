@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { buildCredentialsWorkbook, accountOperationResult, confirmedCredential } from '../lib/accountCredentials.js';
+import { accountTypesForRole } from '../lib/accountManagement.js';
+import { invokeAuthenticatedFunction } from '../lib/invokeAuthenticatedFunction.js';
+import { accountResetRequest, canResetAccount } from '../lib/accountResetRequest.js';
 import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 
-const ACCOUNT_TYPES = [
-  ['district', 'District Logins'],
-  ['block', 'Block Logins'],
-  ['school', 'School Logins'],
-];
 const PAGE_SIZE = 50;
 const EMPTY_FILTERS = { district: '', block: '', school: '', status: '' };
 
@@ -56,12 +54,6 @@ function validListResponse(data, page, pageSize) {
     && data.pageSize === pageSize;
 }
 
-function lastUpdated(value) {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
-}
-
 function operationStatus(status, action) {
   if (status === 'unknown') return `${action} outcome unknown`;
   if (status === 'failed') return `${action} failed`;
@@ -77,6 +69,7 @@ function resetOutcomeUnknown(message) {
 
 export default function AdminScopedAccountManagement({
   supabase,
+  profile,
   initialAccountType = 'district',
   onCredentialsVisibilityChange,
 }) {
@@ -99,7 +92,7 @@ export default function AdminScopedAccountManagement({
     setLoading(true);
     if (!preserveError) setError('');
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
+      const { data, error: invokeError } = await invokeAuthenticatedFunction(supabase, 'admin-scoped-account-management', {
         body: {
           action: 'list',
           accountType,
@@ -151,8 +144,7 @@ export default function AdminScopedAccountManagement({
     selected[`${account.accountType}:${account.loginId}`]), [accounts, selected]);
   const selectedMissing = selectedAccounts.filter((account) =>
     account.accountStatus === 'missing' && (account.accountType !== 'school' || account.active));
-  const selectedResettable = selectedAccounts.filter((account) =>
-    ['active', 'password_change_required'].includes(account.accountStatus) && account.identityConsistent);
+  const selectedResettable = selectedAccounts.filter(canResetAccount);
   const missingOnPage = accounts.filter((account) =>
     account.accountStatus === 'missing' && (account.accountType !== 'school' || account.active));
 
@@ -192,7 +184,7 @@ export default function AdminScopedAccountManagement({
       const schools = targets.filter((account) => account.accountType === 'school');
       if (schools.length) {
         try {
-          const { data, error: invokeError } = await supabase.functions.invoke('create-school-account', {
+          const { data, error: invokeError } = await invokeAuthenticatedFunction(supabase, 'create-school-account', {
             body: { schoolIds: schools.map((account) => account.schoolId) },
           });
           if (invokeError) throw new Error(await functionError(invokeError));
@@ -236,7 +228,7 @@ export default function AdminScopedAccountManagement({
 
       for (const account of targets.filter((item) => item.accountType !== 'school')) {
         try {
-          const { data, error: invokeError } = await supabase.functions.invoke('create-scoped-account', {
+          const { data, error: invokeError } = await invokeAuthenticatedFunction(supabase, 'create-scoped-account', {
             body: { role: account.accountType, code: account.loginId },
           });
           if (invokeError) throw new Error(await functionError(invokeError));
@@ -271,17 +263,12 @@ export default function AdminScopedAccountManagement({
     try {
       for (const account of targets) {
         try {
-          let data;
-          let invokeError;
-          if (account.accountType === 'school') {
-            ({ data, error: invokeError } = await supabase.functions.invoke('admin-school-password-reset', {
-              body: { schoolId: account.schoolId },
-            }));
-          } else {
-            ({ data, error: invokeError } = await supabase.functions.invoke('admin-scoped-account-management', {
-              body: { action: 'reset-password', role: account.accountType, code: account.loginId },
-            }));
-          }
+          const request = accountResetRequest(account);
+          const { data, error: invokeError } = await invokeAuthenticatedFunction(
+            supabase,
+            request.functionName,
+            { body: request.body },
+          );
           if (invokeError) throw new Error(await functionError(invokeError));
           results.push(credentialFrom(account, data, 'reset'));
         } catch (cause) {
@@ -384,6 +371,7 @@ export default function AdminScopedAccountManagement({
   }
 
   const successfulCredentials = credentials.filter((result) => result.temporaryPassword);
+  const accountTypes = accountTypesForRole(profile?.role);
 
   return (
     <section className="card scoped-account-management">
@@ -432,7 +420,7 @@ export default function AdminScopedAccountManagement({
         </div>
       )}
       <nav className="scoped-account-tabs" aria-label="Account type">
-        {ACCOUNT_TYPES.map(([value, label]) => (
+        {accountTypes.map(([value, label]) => (
           <button
             type="button"
             key={value}
@@ -443,12 +431,18 @@ export default function AdminScopedAccountManagement({
         ))}
       </nav>
       <form className="scoped-account-filters" onSubmit={applyFilters}>
-        <label>District name / code
-          <input value={filters.district} onChange={(event) => setFilters((current) => ({ ...current, district: event.target.value }))} />
-        </label>
+        {profile?.role === 'admin'
+          ? <label>District name / code
+            <input value={filters.district} onChange={(event) => setFilters((current) => ({ ...current, district: event.target.value }))} />
+          </label>
+          : <label>જિલ્લા scope
+            <input value={profile?.district_code || ''} readOnly />
+          </label>}
         {accountType !== 'district' && (
           <label>Block name / code
-            <input value={filters.block} onChange={(event) => setFilters((current) => ({ ...current, block: event.target.value }))} />
+            {profile?.role === 'block'
+              ? <input value={profile.block_code || ''} readOnly />
+              : <input value={filters.block} onChange={(event) => setFilters((current) => ({ ...current, block: event.target.value }))} />}
           </label>
         )}
         {accountType === 'school' && (
@@ -489,15 +483,14 @@ export default function AdminScopedAccountManagement({
         <table className="report-table">
           <thead><tr>
             <th>પસંદ કરો</th><th>Account Type</th><th>District / Code</th><th>Block / Code</th>
-            <th>School / ID</th><th>Login ID</th><th>Last Updated</th><th>Actions</th>
+            <th>School / ID</th><th>Login ID</th><th>Actions</th>
           </tr></thead>
           <tbody>
             {accounts.map((account) => {
               const key = `${account.accountType}:${account.loginId}`;
               const createAllowed = account.accountStatus === 'missing'
                 && (account.accountType !== 'school' || account.active);
-              const resetAllowed = ['active', 'password_change_required'].includes(account.accountStatus)
-                && account.identityConsistent;
+              const resetAllowed = canResetAccount(account);
               const school = account.accountType === 'school' ? {
                 id: account.schoolId,
                 code: account.loginId,
@@ -507,7 +500,7 @@ export default function AdminScopedAccountManagement({
                 active: account.active,
               } : null;
               return (
-                <tr key={key}>
+                <tr key={key} className={account.accountType === 'school' ? 'school-account-row' : undefined}>
                   <td><input
                     type="checkbox"
                     aria-label={`${account.loginId} પસંદ કરો`}
@@ -518,17 +511,18 @@ export default function AdminScopedAccountManagement({
                   <td>{account.accountType}</td>
                   <td>{account.districtName || '—'} · {account.districtCode || '—'}</td>
                   <td>{account.blockName ? `${account.blockName} · ${account.blockCode}` : '—'}</td>
-                  <td>{account.schoolName ? `${account.schoolName} · ${account.loginId}` : '—'}</td>
+                  <td className="scoped-school-identity">{account.schoolName ? `${account.schoolName} · ${account.loginId}` : '—'}</td>
                   <td>{account.loginId}</td>
-                  <td>{lastUpdated(account.lastUpdated)}</td>
-                  <td className="scoped-account-actions">
+                  <td className={`scoped-account-actions ${account.accountType === 'school' ? 'school-account-actions' : ''}`}>
                     {createAllowed
                       ? <button type="button" disabled={busy} onClick={() => createAccounts([account])}>Create Login</button>
                       : <button type="button" disabled={busy || !resetAllowed} onClick={() => resetPasswords([account])}>Reset Password</button>}
                     <button type="button" disabled={busy} onClick={() => copyText(account.loginId, 'Login ID')}>Copy Login ID</button>
                     {account.accountType === 'school' && (
                       <>
-                        <button type="button" disabled={busy} onClick={() => editSchool(account)}>Edit School Details</button>
+                        {profile?.role === 'admin' && (
+                          <button type="button" disabled={busy} onClick={() => editSchool(account)}>Edit School Details</button>
+                        )}
                         <SchoolYearReportButton supabase={supabase} school={school} />
                       </>
                     )}
@@ -536,7 +530,7 @@ export default function AdminScopedAccountManagement({
                 </tr>
               );
             })}
-            {!loading && accounts.length === 0 && <tr><td colSpan="8">આ filters માટે કોઈ account મળ્યો નથી.</td></tr>}
+            {!loading && accounts.length === 0 && <tr><td colSpan="7">આ filters માટે કોઈ account મળ્યો નથી.</td></tr>}
           </tbody>
         </table>
       </div>

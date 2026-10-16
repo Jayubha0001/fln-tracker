@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
-import { CLASSES, MONTHS } from '../lib/category';
+import { calc, CLASSES, MONTHS } from '../lib/category';
+import { loadAllRows } from '../lib/loadAllRows';
 
 const GRADE_TABS = [{ key: '', label: 'બધા ધોરણ' }, ...Object.entries(CLASSES).map(([key, v]) => ({ key, label: v.label }))];
 const LEVEL_TITLE = { district: 'જિલ્લો', block: 'તાલુકો', school: 'શાળા' };
@@ -34,11 +35,23 @@ function Kpi({ label, value, sub, tone }) {
 export default function AdminDashboard({ supabase, profile }) {
   const [grade, setGrade] = useState('');
   const [month, setMonth] = useState(defaultMonth);
-  const [scope, setScope] = useState({ district: null, block: null, school: null });
+  const [scope, setScope] = useState(() => profile?.role === 'school' && profile.school_id
+    ? {
+      district: profile.district || null,
+      block: profile.block || null,
+      school: {
+        id: profile.school_id,
+        code: profile.school_code || '',
+        name: profile.school_name || 'શાળા',
+      },
+    }
+    : { district: null, block: null, school: null });
   const [groups, setGroups] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [groupsLevel, setGroupsLevel] = useState('district');
   const [gradeReport, setGradeReport] = useState({});
+  const [studentProgress, setStudentProgress] = useState(null);
+  const [studentProgressError, setStudentProgressError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
@@ -93,6 +106,49 @@ export default function AdminDashboard({ supabase, profile }) {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const schoolId = scope.school?.id;
+    if (!schoolId) {
+      setStudentProgress(null);
+      setStudentProgressError('');
+      return undefined;
+    }
+    let active = true;
+    setStudentProgress(null);
+    setStudentProgressError('');
+    const studentQuery = supabase.from('students')
+      .select('id,name,dhoran')
+      .eq('school_id', schoolId)
+      .order('dhoran').order('name');
+    const entryQuery = supabase.from('entries')
+      .select('student_id,dhoran,month,answers,updated_at')
+      .eq('school_id', schoolId)
+      .eq('month', month);
+    if (grade) {
+      studentQuery.eq('dhoran', grade);
+      entryQuery.eq('dhoran', grade);
+    }
+    Promise.all([loadAllRows(studentQuery), loadAllRows(entryQuery)])
+      .then(([students, entries]) => {
+        if (!active) return;
+        const entryByStudent = new Map(entries.map((entry) => [`${entry.student_id}:${entry.dhoran}`, entry]));
+        setStudentProgress(students.map((student) => {
+          const entry = entryByStudent.get(`${student.id}:${student.dhoran}`) || null;
+          const result = calc(student.dhoran, entry?.answers);
+          return {
+            ...student,
+            entry,
+            result,
+            status: !entry ? 'pending' : result.done === result.total ? 'complete' : 'incomplete',
+          };
+        }));
+      })
+      .catch((cause) => {
+        if (active) setStudentProgressError(`વિદ્યાર્થી પ્રગતિ લોડ થઈ નથી: ${cause.message}`);
+      });
+    return () => { active = false; };
+  }, [supabase, scope.school?.id, month, grade]);
+
   // Live: koi entry save kare to dashboard automatic update (realtime + 30s fallback)
   useEffect(() => {
     if (!live) return undefined;
@@ -118,9 +174,10 @@ export default function AdminDashboard({ supabase, profile }) {
   }), { registered: 0, entered: 0, u: 0, p: 0, n: 0 }), [groups]);
 
   const ledgerByMonth = useMemo(() => new Map(ledger.map((r) => [r.month, r])), [ledger]);
-  const ledgerTotals = useMemo(() => ledger.reduce((t, r) => ({
-    entered: t.entered + Number(r.entered), u: t.u + Number(r.uday), p: t.p + Number(r.pragati), n: t.n + Number(r.nipun),
-  }), { entered: 0, u: 0, p: 0, n: 0 }), [ledger]);
+  const studentProgressCounts = useMemo(() => (studentProgress || []).reduce((counts, student) => {
+    counts[student.status] += 1;
+    return counts;
+  }, { complete: 0, incomplete: 0, pending: 0 }), [studentProgress]);
   const registered = ledger[0] ? Number(ledger[0].registered) : totals.registered;
 
   function drill(row) {
@@ -214,6 +271,44 @@ export default function AdminDashboard({ supabase, profile }) {
           <Kpi tone="p" label="પ્રગતિશીલ" value={totals.p.toLocaleString()} sub={`${pct(totals.p, totals.entered)}%`} />
           <Kpi tone="n" label="નિપુણ" value={totals.n.toLocaleString()} sub={`${pct(totals.n, totals.entered)}%`} />
         </div>
+      )}
+
+      {scope.school && (
+        <>
+          <div className="dash-kpis">
+            <Kpi label="રજિસ્ટર વિદ્યાર્થી" value={studentProgress?.length?.toLocaleString() || '—'} sub={gradeInfo?.label || 'બધાં ધોરણ'} />
+            <Kpi label={`${monthLabel(month)} assessed`} value={studentProgress ? (studentProgress.length - studentProgressCounts.pending).toLocaleString() : '—'} />
+            <Kpi tone="n" label="પૂર્ણ" value={studentProgress ? studentProgressCounts.complete.toLocaleString() : '—'} />
+            <Kpi tone="p" label="અપૂર્ણ" value={studentProgress ? studentProgressCounts.incomplete.toLocaleString() : '—'} />
+            <Kpi tone="u" label="બાકી" value={studentProgress ? studentProgressCounts.pending.toLocaleString() : '—'} />
+          </div>
+          <div className="card dash-card">
+            <h3>વિદ્યાર્થી પ્રમાણે {monthLabel(month)} assessment · {scope.school.name}</h3>
+            {studentProgressError && <p className="error" role="alert">{studentProgressError}</p>}
+            {!studentProgress && !studentProgressError && <p className="muted" role="status">વિદ્યાર્થી પ્રગતિ લોડ થાય છે…</p>}
+            {studentProgress && (
+              <div className="scroll dash-scroll">
+                <table className="dash-table">
+                  <thead><tr><th className="left">વિદ્યાર્થી</th><th>ધોરણ</th><th>સ્થિતિ</th><th>જવાબ / જરૂરી</th><th>છેલ્લે સાચવેલ</th></tr></thead>
+                  <tbody>
+                    {studentProgress.map((student) => (
+                      <tr key={student.id}>
+                        <td className="left">{student.name}</td>
+                        <td>{CLASSES[student.dhoran]?.label || student.dhoran}</td>
+                        <td className={student.status === 'complete' ? 'cn' : student.status === 'incomplete' ? 'cp' : 'cu'}>
+                          {student.status === 'complete' ? 'પૂર્ણ' : student.status === 'incomplete' ? 'અપૂર્ણ' : 'બાકી'}
+                        </td>
+                        <td>{student.entry ? `${student.result.done}/${student.result.total} · ${student.result.yes} હા` : '—'}</td>
+                        <td>{student.entry?.updated_at ? new Date(student.entry.updated_at).toLocaleString() : '—'}</td>
+                      </tr>
+                    ))}
+                    {!studentProgress.length && <tr><td colSpan="5" className="muted">આ filter માટે વિદ્યાર્થી મળ્યા નથી.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {!scope.school && (

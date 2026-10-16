@@ -116,7 +116,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
       {activeSection === 'dashboard' && <AdminDashboard supabase={supabase} profile={profile} />}
       {activeSection === 'reports' && <AdminReports supabase={supabase} profile={{ role: 'admin' }} />}
       {activeSection === 'accounts' && (
-        <AdminScopedAccountManagement supabase={supabase} onCredentialsVisibilityChange={setCredentialsVisible} />
+        <AdminScopedAccountManagement supabase={supabase} profile={profile} onCredentialsVisibilityChange={setCredentialsVisible} />
       )}
       {activeSection === 'school-management' && (
         <>
@@ -124,6 +124,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           <AdminScopedAccountManagement
             key={activeSection}
             supabase={supabase}
+            profile={profile}
             initialAccountType="school"
             onCredentialsVisibilityChange={setCredentialsVisible}
           />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { db } from '../db';
 import { CLASSES } from '../lib/category';
+import { loadAllRows } from '../lib/loadAllRows.js';
 import { normDhoran, detectStandard, parseStandard } from '../lib/importStudents';
 import SchoolStudentImport from './SchoolStudentImport.jsx';
 
@@ -22,7 +23,12 @@ async function saveBatches(supabase, rows) {
   }
 }
 
-export default function Students({ supabase, school, dhoran }) {
+const PAGE_SIZE = 50;
+
+export default function Students({ supabase, school, dhoran: dhoranProp }) {
+  const dhoran = CLASSES[dhoranProp] ? dhoranProp : '1';
+  const [search, setSearch] = useState('');
+  const [listPage, setListPage] = useState(1);
   const [students, setStudents] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [name, setName] = useState('');
@@ -38,17 +44,18 @@ export default function Students({ supabase, school, dhoran }) {
   useEffect(() => {
     let mounted = true;
     setStudents(null);
-    supabase.from('students').select('*')
+    setListPage(1);
+    loadAllRows(supabase.from('students').select('*')
       .eq('school_id', school.id)
       .eq('dhoran', dhoran)
-      .order('name')
-      .then(({ data, error: queryError }) => {
-        if (!mounted) return;
-        if (queryError) setError(`વિદ્યાર્થી લોડ થઈ શક્યા નથી: ${queryError.message}`);
-        else setStudents(data || []);
+      .order('name').order('id'))
+      .then((rows) => {
+        if (mounted) setStudents(rows);
       })
       .catch((cause) => {
-        if (mounted) setError(`વિદ્યાર્થી લોડ થઈ શક્યા નથી: ${cause.message}`);
+        if (!mounted) return;
+        setStudents([]);
+        setError(`વિદ્યાર્થી લોડ થઈ શક્યા નથી: ${cause.message}`);
       });
     return () => { mounted = false; };
   }, [supabase, school.id, dhoran, reloadKey]);
@@ -312,6 +319,13 @@ export default function Students({ supabase, school, dhoran }) {
     </label>
   );
 
+  const needle = search.trim().toLowerCase();
+  const filtered = (students || []).filter((student) => !needle
+    || `${student.name || ''} ${student.reg || ''} ${student.student_id || ''}`.toLowerCase().includes(needle));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(listPage, pageCount);
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   const counts = sheet?.standard
     ? sheet.parsed.list.reduce((result, student) => ({
       ...result,
@@ -379,14 +393,34 @@ export default function Students({ supabase, school, dhoran }) {
       </div>
 
       {!students ? <p>વિદ્યાર્થી લોડ થાય છે…</p> : (
-        <ul className="list">
-          {students.map((student, index) => (
-            <li key={student.id}>
-              <span>{index + 1}. {student.name} {student.reg && <small>({student.reg})</small>}</span>
-              <button className="link" onClick={() => remove(student)}>કાઢો</button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="card row">
+            <input
+              aria-label="વિદ્યાર્થી શોધો"
+              placeholder="નામ / રજીસ્ટર નં. શોધો"
+              value={search}
+              onChange={(event) => { setSearch(event.target.value); setListPage(1); }}
+            />
+            <span className="muted">{filtered.length} / {students.length}</span>
+          </div>
+          {!students.length && !error && <p className="muted">આ ધોરણમાં હજી કોઈ વિદ્યાર્થી નથી.</p>}
+          {!!students.length && !filtered.length && <p className="muted">શોધ મુજબ કોઈ વિદ્યાર્થી મળ્યો નથી.</p>}
+          <ul className="list">
+            {visible.map((student, index) => (
+              <li key={student.id}>
+                <span>{(currentPage - 1) * PAGE_SIZE + index + 1}. {student.name} {student.reg && <small>({student.reg})</small>}</span>
+                <button className="link" onClick={() => remove(student)}>કાઢો</button>
+              </li>
+            ))}
+          </ul>
+          {pageCount > 1 && (
+            <div className="row between">
+              <button disabled={currentPage <= 1} onClick={() => setListPage(currentPage - 1)}>← પાછળનું</button>
+              <span className="muted">પાનું {currentPage}/{pageCount}</span>
+              <button disabled={currentPage >= pageCount} onClick={() => setListPage(currentPage + 1)}>આગળનું →</button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

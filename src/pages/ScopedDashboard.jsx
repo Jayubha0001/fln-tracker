@@ -7,6 +7,7 @@ import Students from './Students.jsx';
 import Summary from './Summary.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
+import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 
 export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
@@ -18,6 +19,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [month, setMonth] = useState(MONTHS[0].key);
   const [activeSection, setActiveSection] = useState('dashboard');
   const [entryDirty, setEntryDirty] = useState(false);
+  const [credentialsVisible, setCredentialsVisible] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -50,7 +52,9 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
 
   function changeSection(nextSection) {
     if (entryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. ટેબ બદલશો?')) return false;
+    if (credentialsVisible && !window.confirm('One-time credentials panel છોડશો? Copy/download કર્યા ન હોય તો password ફરી જોઈ શકાશે નહીં.')) return false;
     setEntryDirty(false);
+    setCredentialsVisible(false);
     setActiveSection(nextSection);
     return true;
   }
@@ -63,6 +67,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
 
   async function signOutSafely() {
     if (entryDirty && !window.confirm('એન્ટ્રીમાં ન સાચવેલા ફેરફાર છે. લૉગઆઉટ કરશો?')) return;
+    if (credentialsVisible && !window.confirm('One-time credentials panel છોડશો? Copy/download કર્યા ન હોય તો password ફરી જોઈ શકાશે નહીં.')) return;
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) setError(`લૉગઆઉટ નિષ્ફળ: ${signOutError.message}`);
     else onSignOut();
@@ -85,6 +90,14 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
         {error && <p className="error" role="alert">{error}</p>}
         {activeSection === 'dashboard' && <AdminDashboard supabase={supabase} profile={profile} />}
         {activeSection === 'reports' && <AdminReports supabase={supabase} profile={profile} />}
+        {activeSection === 'accounts' && (
+          <AdminScopedAccountManagement
+            supabase={supabase}
+            profile={profile}
+            initialAccountType={profile.role === 'district' ? 'block' : 'school'}
+            onCredentialsVisibilityChange={setCredentialsVisible}
+          />
+        )}
         {['schools', 'students', 'entry', 'summary'].includes(activeSection) && (
           <>
         <div className="card row manager-selectors">
@@ -122,7 +135,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
         )}
           </>
         )}
-        {school && activeSection === 'students' && <Students supabase={supabase} school={school} />}
+        {school && activeSection === 'students' && <Students key={school.id} supabase={supabase} school={school} dhoran={dhoran} />}
         {school && activeSection === 'entry' && (
           <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />
         )}

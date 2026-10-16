@@ -160,8 +160,6 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   Object.entries(draft).forEach(([studentId, answers]) => {
     visibleByStudent[studentId] = { ...byStudent[studentId], student_id: studentId, answers };
   });
-  const completed = students.filter((student) => calc(dhoran, byStudent[student.id]?.answers).cat).length;
-
   if (view === 'card' && openId !== null) {
     const index = students.findIndex((student) => student.id === openId);
     if (index >= 0) {
