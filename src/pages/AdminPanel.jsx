@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CLASSES, MONTHS } from '../lib/category';
+import { CLASSES, MONTHS, currentMonthKey } from '../lib/category';
 import Students from './Students.jsx';
 import Entry from './Entry.jsx';
 import Summary from './Summary.jsx';
@@ -8,6 +8,7 @@ import AdminReports from './AdminReports.jsx';
 import AdminDashboard from './AdminDashboard.jsx';
 import AdminSchoolImport from './AdminSchoolImport.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
+import { SchoolRemovePanel } from '../components/SchoolTools.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 
 const emptySchool = {
@@ -160,13 +161,16 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
             </summary>
             <div className="tool-body">{addSchoolForm}</div>
           </details>
-          <AdminScopedAccountManagement
-            key={activeSection}
-            supabase={supabase}
-            profile={profile}
-            initialAccountType="school"
-            onCredentialsVisibilityChange={setCredentialsVisible}
-          />
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">🗑</span>
+              <b>શાળા કાઢો</b>
+              <small>શાળા શોધો, કાઢો અથવા પાછી ચાલુ કરો</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><SchoolRemovePanel supabase={supabase} viaFunction={false} onChanged={loadSchools} /></div>
+          </details>
+          <p className="muted">શાળા Login બનાવવા, પાસવર્ડ રીસેટ, School ID અને વાર્ષિક report માટે <b>Login &amp; Password Management</b> ટેબમાં “શાળા” પસંદ કરો.</p>
         </>
       )}
       {activeSection === 'student-management' && (
@@ -208,7 +212,7 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTa
   const [schoolId, setSchoolId] = useState('');
   const [tab, setTab] = useState(initialTab);
   const [dhoran, setDhoran] = useState('1');
-  const [month, setMonth] = useState(MONTHS[0].key);
+  const [month, setMonth] = useState(currentMonthKey);
   const [entryDirty, setEntryDirty] = useState(false);
   const school = schools.find((item) => item.id === schoolId);
 

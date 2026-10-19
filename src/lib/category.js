@@ -1,4 +1,5 @@
 import { STATEMENTS } from '../data/statements';
+import { pickCurrentMonth } from './currentMonth.js';
 import { GRADE_RULES } from '../../supabase/functions/_shared/assessmentRules.js';
 
 // PDF mujab: Udayman = 0..udayMax, Nipun = nipunMin..total, vachche Pragatishil
@@ -32,6 +33,8 @@ export const MONTHS = [
   { key: '2027-02', label: 'ફેબ્રુઆરી-27' },
   { key: '2027-03', label: 'માર્ચ-27' },
 ];
+
+export const currentMonthKey = (now = new Date()) => pickCurrentMonth(MONTHS, now);
 
 // Eka vidyarthi na answers ({vidhan_no: true/false}) parthi result
 export function calc(dhoran, answers = {}) {

@@ -163,7 +163,7 @@ function TrendChart({ trend }) {
   );
 }
 
-export default function DashboardOverview({ unitTitle, monthLabel, rows, totals, trend = [], onSelect }) {
+export default function DashboardOverview({ unitTitle, monthLabel, rows, totals, trend = [], gradeCards = [], onSelect }) {
   const pending = Math.max(0, totals.registered - totals.entered);
   const attention = [...rows]
     .filter((row) => row.registered > 0)
@@ -194,6 +194,17 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
             <button type="button" key={row.key} disabled={!onSelect} onClick={() => onSelect?.(row)} title={`${row.label}: ${row.entered}/${row.registered}`}>
               {short(row.label, 14)} <em>{row.entryPct}%</em>
             </button>
+          ))}
+        </div>
+      )}
+      {gradeCards.length > 0 && (
+        <div className="ov-grades">
+          {gradeCards.map((card) => (
+            <div key={card.key} className="ov-grade" title={`ઉદયમાન ${card.u} · પ્રગતિશીલ ${card.p} · નિપુણ ${card.n}`}>
+              <div className="ov-grade-head"><b>{card.label}</b><span>નિપુણ {pct(card.n, card.registered)}%</span></div>
+              <div className="ov-grade-track"><i style={{ width: `${Math.min(100, pct(card.entered, card.registered))}%` }} /></div>
+              <small>એન્ટ્રી {fmt(card.entered)} / {fmt(card.registered)} · બાકી {fmt(Math.max(0, card.registered - card.entered))}</small>
+            </div>
           ))}
         </div>
       )}

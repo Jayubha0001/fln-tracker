@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
-import { calc, CLASSES, MONTHS } from '../lib/category';
+import { calc, CLASSES, MONTHS, currentMonthKey } from '../lib/category';
 import { loadAllRows } from '../lib/loadAllRows';
 import DashboardOverview from '../components/DashboardOverview.jsx';
 
@@ -9,7 +9,7 @@ const LEVEL_TITLE = { district: 'જિલ્લો', block: 'તાલુકો
 const GRADE_KEYS = Object.keys(CLASSES);
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
 const monthLabel = (key) => MONTHS.find((m) => m.key === key)?.label || key;
-const defaultMonth = MONTHS.find((m) => m.key === new Date().toISOString().slice(0, 7))?.key || MONTHS[0].key;
+const defaultMonth = currentMonthKey();
 
 function TriBar({ u, p, n }) {
   const total = u + p + n;
@@ -303,6 +303,7 @@ export default function AdminDashboard({ supabase, profile }) {
         rows={overviewRows}
         totals={overviewTotals}
         trend={trend}
+        gradeCards={scope.school ? [] : GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => ({ key: k, label: CLASSES[k].label, ...(gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 }) }))}
         onSelect={scope.school ? undefined : (row) => drill(row.raw)}
       />
 

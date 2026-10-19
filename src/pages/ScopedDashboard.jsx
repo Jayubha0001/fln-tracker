@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CLASSES, MONTHS } from '../lib/category';
+import { CLASSES, MONTHS, currentMonthKey } from '../lib/category';
 import AdminReports from './AdminReports.jsx';
 import AdminDashboard from './AdminDashboard.jsx';
 import Entry from './Entry.jsx';
@@ -8,15 +8,17 @@ import Summary from './Summary.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
+import { ScopedSchoolTools } from '../components/SchoolTools.jsx';
 
 export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
   const [schoolCount, setSchoolCount] = useState(0);
   const [schoolPage, setSchoolPage] = useState(0);
   const [schoolsLoaded, setSchoolsLoaded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [schoolId, setSchoolId] = useState('');
   const [dhoran, setDhoran] = useState('1');
-  const [month, setMonth] = useState(MONTHS[0].key);
+  const [month, setMonth] = useState(currentMonthKey);
   const [activeSection, setActiveSection] = useState('dashboard');
   const [entryDirty, setEntryDirty] = useState(false);
   const [credentialsVisible, setCredentialsVisible] = useState(false);
@@ -28,6 +30,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
     setError('');
     supabase.from('schools')
       .select('id,code,name,district,block,cluster,active', { count: 'exact' })
+      .eq('active', true)
       .order('name').order('code')
       .range(schoolPage * pageSize, (schoolPage + 1) * pageSize - 1)
       .then(({ data, error: schoolError, count }) => {
@@ -46,7 +49,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
         }
       });
     return () => { active = false; };
-  }, [supabase, schoolPage]);
+  }, [supabase, schoolPage, reloadKey]);
 
   const school = schools.find((item) => item.id === schoolId) || null;
 
@@ -132,6 +135,9 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
             <p className="muted">{school.district} › {school.block} · {school.cluster || ''}</p>
             <SchoolYearReportButton supabase={supabase} school={school} />
           </section>
+        )}
+        {activeSection === 'schools' && (
+          <ScopedSchoolTools supabase={supabase} onChanged={() => setReloadKey((value) => value + 1)} />
         )}
           </>
         )}

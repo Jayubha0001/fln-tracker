@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { accountManagementScope } from '../_shared/accountManagementAuthorization.js';
+import { scopedImportRowIssue } from '../_shared/schoolManagement.js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,12 +52,13 @@ Deno.serve(async (request) => {
   const { data: authData, error: authError } = await admin.auth.getUser(token);
   if (authError || !authData.user) return response(401, { error: 'Admin session માન્ય નથી.' });
   const { data: actor, error: actorError } = await admin.from('profiles')
-    .select('role,active').eq('id', authData.user.id).maybeSingle();
+    .select('role,active,district_code,block_code').eq('id', authData.user.id).maybeSingle();
   if (actorError) {
     console.error('Unable to verify school-import admin:', actorError.message);
     return response(500, { error: 'Admin અધિકાર ચકાસી શકાયા નથી.' });
   }
-  if (actor?.role !== 'admin' || !actor.active) return response(403, { error: 'સક્રિય Admin અધિકાર જરૂરી છે.' });
+  const scope = accountManagementScope(actor);
+  if (!scope) return response(403, { error: 'સક્રિય Admin/District/Block અધિકાર જરૂરી છે.' });
 
   let payload: { action?: unknown; rows?: unknown };
   try {
@@ -68,10 +71,25 @@ Deno.serve(async (request) => {
     return response(400, { error: `દરેક batchમાં 1થી ${MAX_BATCH} rows જ મોકલો.` });
   }
   const rows = payload.rows as ImportRow[];
+  // District/Block: names are taken from existing schools of the same 6-digit prefix (never from the sheet).
+  const siblingByPrefix = new Map<string, { district: string; block: string } | null>();
+  if (scope.role !== 'admin') {
+    const prefixes = [...new Set(rows.map((row) => String(row?.schoolId ?? '').slice(0, 6)).filter((item) => /^\d{6}$/.test(item)))];
+    for (const prefix of prefixes) {
+      if (prefix.slice(0, 4) !== scope.districtCode) continue;
+      if (scope.role === 'block' && prefix !== scope.blockCode) continue;
+      const { data: sibling, error: siblingError } = await admin.from('schools')
+        .select('district,block').like('code', `${prefix}%`).limit(1).maybeSingle();
+      if (siblingError) return response(500, { error: 'વિસ્તાર ચકાસી શકાયો નથી.' });
+      siblingByPrefix.set(prefix, sibling || null);
+    }
+  }
   const seen = new Set<string>();
   const outcomes = rows.map((row) => {
     const invalidReason = validateRow(row);
     if (invalidReason) return { rowNumber: row.rowNumber, schoolId: row.schoolId, status: 'invalid', reason: invalidReason };
+    const scopeIssue = scopedImportRowIssue(scope, row.schoolId, siblingByPrefix.get(row.schoolId.slice(0, 6)));
+    if (scopeIssue) return { rowNumber: row.rowNumber, schoolId: row.schoolId, status: 'invalid', reason: scopeIssue };
     if (seen.has(row.schoolId)) return { rowNumber: row.rowNumber, schoolId: row.schoolId, status: 'duplicate_file', reason: 'આ SchoolId uploadમાં એકથી વધુ વખત છે.' };
     seen.add(row.schoolId);
     return { rowNumber: row.rowNumber, schoolId: row.schoolId, status: 'new', reason: '' };
@@ -104,8 +122,8 @@ Deno.serve(async (request) => {
     const records = batch.map((item) => {
       const row = rowsById.get(item.schoolId) as ImportRow;
       return {
-        district: row.district.trim(),
-        block: row.block.trim(),
+        district: scope.role === 'admin' ? row.district.trim() : siblingByPrefix.get(row.schoolId.slice(0, 6))!.district,
+        block: scope.role === 'admin' ? row.block.trim() : siblingByPrefix.get(row.schoolId.slice(0, 6))!.block,
         cluster_id: row.clusterId.trim(),
         cluster: row.cluster.trim(),
         code: row.schoolId,

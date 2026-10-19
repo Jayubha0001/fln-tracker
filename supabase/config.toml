@@ -15,3 +15,6 @@ verify_jwt = true
 
 [functions.admin-import-schools]
 verify_jwt = true
+
+[functions.scoped-school-management]
+verify_jwt = true

@@ -797,3 +797,22 @@ details.tool > .tool-body > .card { box-shadow: none; border: 0; padding: 0; bac
 
 .dash-card, .card.dash-card { padding: 10px 12px; }
 .dash-table th, .dash-table td { padding-top: 4px; padding-bottom: 4px; }
+
+/* ---- Grade-wise cards ---- */
+.ov-grades { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.ov-grade { padding: 8px 12px; border-radius: 14px; background: #fff; border: 1px solid #e3eaf3; box-shadow: 0 6px 16px #1a3a6a0f; display: grid; gap: 4px; }
+.ov-grade-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ov-grade-head b { font-size: 13px; color: #14243a; }
+.ov-grade-head span { font-size: 12px; font-weight: 800; color: #14783f; background: #e3f6ea; padding: 1px 8px; border-radius: 10px; }
+.ov-grade-track { height: 7px; border-radius: 6px; background: #e9eef5; overflow: hidden; }
+.ov-grade-track i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #2f6fe0, #35c9d6); }
+.ov-grade small { font-size: 11px; color: #5b6b78; }
+
+/* ---- School add/remove tools ---- */
+button.danger { background: #fff1f1; border: 1px solid #e8a3a3; color: #a52222; border-radius: 10px; }
+button.danger:hover:not(:disabled) { background: #ffe0e0; }
+.school-tools { display: grid; gap: 8px; margin-top: 8px; }
+
+/* ---- School search + remove list ---- */
+.school-remove-list li { align-items: center; gap: 10px; }
+.school-remove-list li > span { min-width: 0; }

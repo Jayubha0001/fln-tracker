@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CLASSES, MONTHS } from './lib/category';
+import { CLASSES, MONTHS, currentMonthKey } from './lib/category';
 import { supabase, supabaseConfigError } from './lib/supabase';
 import Login from './pages/Login.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
@@ -13,7 +13,7 @@ import DashboardLayout from './components/DashboardLayout.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 import AdminReports from './pages/AdminReports.jsx';
 
-const nowKey = new Date().toISOString().slice(0, 7);
+const nowKey = currentMonthKey();
 
 function profileLoadMessage(cause) {
   if (
@@ -202,7 +202,7 @@ function SchoolTracker({ supabase, school, onSignOut }) {
   const [dhoran, setDhoran] = useState('1');
   const [entryDirty, setEntryDirty] = useState(false);
   const [month, setMonth] = useState(
-    MONTHS.find((m) => m.key === nowKey)?.key || MONTHS[0].key
+    nowKey
   );
 
   function leaveEntry(next) {
