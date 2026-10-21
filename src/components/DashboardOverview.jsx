@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
 const fmt = (value) => Number(value || 0).toLocaleString();
 
@@ -6,6 +8,7 @@ const ICONS = {
   bars: 'M5 20V11M10 20V4M15 20v-7M20 20V8',
   doc: 'M6 3h9l4 4v14H6V3zM9 11h7M9 15h7M9 19h4',
   trend: 'M3 17l6-6 4 4 8-9M15 6h6v6',
+  school: 'M3 10l9-6 9 6M5 10v10h14V10M9 20v-6h6v6',
   clock: 'M12 7v5l3 2M12 21a9 9 0 100-18 9 9 0 000 18z',
   trophy: 'M8 4h8v5a4 4 0 01-8 0V4zM8 6H4v1a3 3 0 003 3M16 6h4v1a3 3 0 01-3 3M12 13v4M8 21h8M10 17h4',
 };
@@ -163,7 +166,8 @@ function TrendChart({ trend }) {
   );
 }
 
-export default function DashboardOverview({ unitTitle, monthLabel, rows, totals, trend = [], gradeCards = [], onSelect }) {
+export default function DashboardOverview({ unitTitle, monthLabel, rows, totals, trend = [], gradeCards = [], schoolStats = null, onSelect }) {
+  const [pendingSearch, setPendingSearch] = useState('');
   const pending = Math.max(0, totals.registered - totals.entered);
   const attention = [...rows]
     .filter((row) => row.registered > 0)
@@ -196,6 +200,59 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
             </button>
           ))}
         </div>
+      )}
+      {schoolStats && (
+        <section className="ov-schools">
+          <div className="ov-schools-head">
+            <b>શાળા સ્થિતિ · {monthLabel}</b>
+            <small>{schoolStats.eligible} શાળામાં વિદ્યાર્થી રજિસ્ટર છે{schoolStats.noStudents ? ` · ${schoolStats.noStudents} શાળામાં વિદ્યાર્થી નથી` : ''}</small>
+          </div>
+          <div className="ov-kpis">
+            <OverviewKpi tone="blue" icon="school" label="કુલ શાળા" value={fmt(schoolStats.total)} sub={`${fmt(schoolStats.eligible)} સક્રિય`} />
+            <OverviewKpi tone="green" icon="bars" label="એન્ટ્રી શરૂ" value={fmt(schoolStats.started)} sub={`${pct(schoolStats.started, schoolStats.eligible)}% શાળા`} />
+            <OverviewKpi tone="violet" icon="trophy" label="પૂર્ણ શાળા" value={fmt(schoolStats.complete)} sub={`${pct(schoolStats.complete, schoolStats.eligible)}%`} />
+            <OverviewKpi tone="amber" icon="doc" label="અધૂરી શાળા" value={fmt(schoolStats.partial)} sub={`${pct(schoolStats.partial, schoolStats.eligible)}%`} />
+            <OverviewKpi tone="pink" icon="clock" label="બાકી શાળા" value={fmt(schoolStats.pending)} sub={`${pct(schoolStats.pending, schoolStats.eligible)}% એન્ટ્રી નથી`} />
+          </div>
+          {schoolStats.eligible > 0 && (
+            <div className="ov-stack" role="img" aria-label="શાળા એન્ટ્રી સ્થિતિ">
+              <i className="done" style={{ width: `${pct(schoolStats.complete, schoolStats.eligible)}%` }} />
+              <i className="part" style={{ width: `${pct(schoolStats.partial, schoolStats.eligible)}%` }} />
+              <i className="todo" style={{ width: `${pct(schoolStats.pending, schoolStats.eligible)}%` }} />
+            </div>
+          )}
+          {schoolStats.pendingList.length > 0 && (
+            <details className="tool ov-pending">
+              <summary>
+                <span className="tool-ico" aria-hidden="true">!</span>
+                <b>બાકી શાળાઓની યાદી ({fmt(schoolStats.pendingList.length)})</b>
+                <small>જેમાં {monthLabel} ની એક પણ એન્ટ્રી નથી</small>
+                <i className="tool-chev" aria-hidden="true">⌄</i>
+              </summary>
+              <div className="tool-body">
+                <input type="search" placeholder="શાળા / કોડ / બ્લોક શોધો…" value={pendingSearch} onChange={(event) => setPendingSearch(event.target.value)} />
+                {(() => {
+                  const needle = pendingSearch.trim().toLowerCase();
+                  const matches = schoolStats.pendingList.filter((item) => !needle
+                    || `${item.name} ${item.code} ${item.block} ${item.district}`.toLowerCase().includes(needle));
+                  return (
+                    <>
+                      <ul className="list ov-pending-list">
+                        {matches.slice(0, 100).map((item) => (
+                          <li key={item.id || item.code}>
+                            <span><b>{item.name}</b> <small>({item.code})</small><br /><small className="muted">{item.district} › {item.block} · રજિસ્ટર {fmt(item.registered)}</small></span>
+                          </li>
+                        ))}
+                        {!matches.length && <li className="muted">કોઈ શાળા મળી નથી.</li>}
+                      </ul>
+                      {matches.length > 100 && <small className="muted">પહેલી 100 બતાવી છે ({fmt(matches.length)} માંથી); શોધ વધુ ચોક્કસ કરો.</small>}
+                    </>
+                  );
+                })()}
+              </div>
+            </details>
+          )}
+        </section>
       )}
       {gradeCards.length > 0 && (
         <div className="ov-grades">

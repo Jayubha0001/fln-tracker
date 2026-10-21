@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_CqMBqCJLIahU20WbLw2JQICWy29v",
+      "name": "fln-tracker",
+      "directory": ".",
+      "orgId": "team_pI1uJeUmo2uQ3U8OYKQ299Yt"
+    }
+  ]
+}

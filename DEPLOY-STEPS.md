@@ -73,3 +73,18 @@ supabase secrets set ADMIN_TEMPORARY_PASSWORD='Admin@987' --project-ref nutnaymo
 [ ] District: Excel import ma potana district ni shala j add thay; bahar ni rows invalid
 [ ] Block login: fakt potana block ni shala
 [ ] "Kaado" pachhi shala dropdown/list mathi jati rahe; students/entries data khoyo nathi
+
+## 9. Navu (dashboard/entry): school status, back button, column tick
+Files: src\pages\AdminDashboard.jsx, src\pages\Entry.jsx, src\components\DashboardOverview.jsx, src\index.css
+- School status (કુલ / એન્ટ્રી શરૂ / પૂર્ણ / અધૂરી / બાકી શાળા + બાકી શાળાઓ ni yadi) Admin, District, Block ma
+- Table ma "શાળા" ane "બાકી શાળા" columns (District ane Block level)
+- "← પાછા" button table ni header + niche + school student list ma
+- Entry grid: badha students ma ✓ hoy to "આખી કૉલમ ભરો" ni ✓ lili (selected) dekhay; pharithi dabavo to column khali
+- Navi RPC/migration nathi joiti (fln_group_stats ('school') j vaparyu)
+
+## 10. Entry: "બધા ✓ પહેલેથી પસંદ" (default all yes)
+Files: src\pages\Entry.jsx, src\index.css
+- Je vidyarthi ni e mahina ni entry nathi, temna badha vidhan pahelethi ✓ dekhay; khota hoy te j ✗ karo
+- "એન્ટ્રી સાચવો" dabavta confirm puchhay; pachhi te badha vidyarthi ni entry save thay
+- Checkbox thi band kari shakay (browser ma yaad rahe chhe); jyare band hoy to junu khali grid
+- Jemni entry pehla thi save chhe temna answers badlata nathi

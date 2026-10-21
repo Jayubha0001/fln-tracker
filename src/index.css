@@ -816,3 +816,24 @@ button.danger:hover:not(:disabled) { background: #ffe0e0; }
 /* ---- School search + remove list ---- */
 .school-remove-list li { align-items: center; gap: 10px; }
 .school-remove-list li > span { min-width: 0; }
+
+/* ---- School status, back button, column tick state ---- */
+.ov-schools { display: grid; gap: 8px; padding: 10px 12px; border-radius: 16px; background: linear-gradient(135deg, #f3f8ff, #fff); border: 1px solid #dbe6f5; }
+.ov-schools-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.ov-schools-head b { color: #14243a; font-size: 14px; }
+.ov-schools-head small { color: #5b6b78; }
+.ov-stack { display: flex; height: 10px; border-radius: 8px; overflow: hidden; background: #e9eef5; }
+.ov-stack i { display: block; height: 100%; }
+.ov-stack .done { background: #1ea45c; } .ov-stack .part { background: #f5a024; } .ov-stack .todo { background: #e8509b; }
+.ov-pending-list { max-height: 260px; overflow: auto; margin: 6px 0; }
+.dash-back { min-height: 30px; padding: 3px 12px; border-radius: 10px; background: #eef3fb; border: 1px solid #c9d7ec; color: #1d3a6a; font-weight: 700; }
+.dash-back:hover { background: #dfeafb; }
+.dash-back-foot { display: flex; justify-content: flex-start; padding-top: 8px; }
+button.mini.yes.on { background: #1f9d57; border-color: #1f9d57; color: #fff; box-shadow: 0 0 0 2px #1f9d5733; }
+button.mini.yes.part { background: #e0f4e8; border-color: #1f9d57; color: #14783f; }
+
+/* ---- Entry: default all ✓ ---- */
+.entry-default { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin: 6px 0; padding: 7px 12px; border-radius: 12px; background: #eaf7ef; border: 1px solid #bfe5cd; font-size: 13px; }
+.entry-default label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+.entry-default input[type='checkbox'] { width: 18px; height: 18px; accent-color: #1f9d57; }
+.entry-wrong { padding: 2px 10px; border-radius: 12px; background: #fff0f0; border: 1px solid #f0b8b8; color: #a52222; font-weight: 700; }

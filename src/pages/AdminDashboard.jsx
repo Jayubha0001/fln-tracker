@@ -50,6 +50,7 @@ export default function AdminDashboard({ supabase, profile }) {
   const [groups, setGroups] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [groupsLevel, setGroupsLevel] = useState('district');
+  const [schoolRows, setSchoolRows] = useState([]);
   const [gradeReport, setGradeReport] = useState({});
   const [studentProgress, setStudentProgress] = useState(null);
   const [studentProgressError, setStudentProgressError] = useState('');
@@ -82,12 +83,26 @@ export default function AdminDashboard({ supabase, profile }) {
           p_district: scope.district, p_block: scope.block, p_school_id: scope.school?.id || null, p_dhoran: k,
         })),
       ]);
+      // School-level rows (for 'કેટલી શાળા / કેટલી બાકી'): one row per active school in the current scope.
+      let schools = [];
+      if (!scope.school) {
+        try {
+          schools = level === 'school'
+            ? (g.data || [])
+            : await loadAllRows(supabase.rpc('fln_group_stats', {
+              p_group: 'school', p_district: scope.district, p_block: scope.block, p_dhoran: dhoran, p_month: month,
+            }).order('school_code'));
+        } catch (schoolCause) {
+          console.warn('School status could not be loaded:', schoolCause.message);
+        }
+      }
       const gradeError = perGrade.find((x) => x.error)?.error;
       if (gradeError) throw gradeError;
       if (g.error) throw g.error;
       if (l.error) throw l.error;
       if (id !== reqId.current) return;
       setGroups(g.data || []);
+      setSchoolRows(schools);
       setGroupsLevel(level);
       setLedger(l.data || []);
       setGradeReport(Object.fromEntries(GRADE_KEYS.map((k, i) => {
@@ -187,6 +202,32 @@ export default function AdminDashboard({ supabase, profile }) {
       u: Number(r.uday), p: Number(r.pragati), n: Number(r.nipun),
     }));
   }, [scope.school, grade, gradeReport, groups]);
+  const schoolStats = useMemo(() => {
+    if (scope.school || !schoolRows.length) return null;
+    const list = schoolRows.map((r) => ({
+      id: r.school_id, code: r.school_code || r.group_key, name: r.group_label, district: r.district, block: r.block,
+      registered: Number(r.registered), entered: Number(r.entered),
+    }));
+    const eligible = list.filter((s) => s.registered > 0);
+    const complete = eligible.filter((s) => s.entered >= s.registered).length;
+    const pendingList = eligible.filter((s) => s.entered === 0).sort((a, b) => a.name.localeCompare(b.name));
+    const partial = eligible.length - complete - pendingList.length;
+    return {
+      total: list.length, eligible: eligible.length, noStudents: list.length - eligible.length,
+      complete, partial, pending: pendingList.length, started: complete + partial, pendingList,
+    };
+  }, [scope.school, schoolRows]);
+  const schoolsByGroup = useMemo(() => {
+    const map = new Map();
+    schoolRows.forEach((r) => {
+      const key = level === 'district' ? r.district : r.block;
+      const cur = map.get(key) || { total: 0, pending: 0 };
+      cur.total += 1;
+      if (Number(r.registered) > 0 && Number(r.entered) === 0) cur.pending += 1;
+      map.set(key, cur);
+    });
+    return map;
+  }, [schoolRows, level]);
   const overviewTotals = useMemo(() => overviewRows.reduce((t, r) => ({
     registered: t.registered + r.registered, entered: t.entered + r.entered,
     u: t.u + r.u, p: t.p + r.p, n: t.n + r.n,
@@ -248,6 +289,13 @@ export default function AdminDashboard({ supabase, profile }) {
     scope.school && { label: scope.school.name, depth: 3 },
   ].filter(Boolean);
   const gradeInfo = grade ? CLASSES[grade] : null;
+  const backCrumb = crumbs.length > 1 ? crumbs[crumbs.length - 2] : null;
+  const canGoBack = Boolean(backCrumb && backCrumb.depth >= minDepth);
+  const backButton = canGoBack && (
+    <button type="button" className="dash-back" onClick={() => { goto(backCrumb.depth); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+      ← પાછા · {backCrumb.label}
+    </button>
+  );
 
   return (
     <section className="dash">
@@ -303,6 +351,7 @@ export default function AdminDashboard({ supabase, profile }) {
         rows={overviewRows}
         totals={overviewTotals}
         trend={trend}
+        schoolStats={schoolStats}
         gradeCards={scope.school ? [] : GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => ({ key: k, label: CLASSES[k].label, ...(gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 }) }))}
         onSelect={scope.school ? undefined : (row) => drill(row.raw)}
       />
@@ -317,7 +366,10 @@ export default function AdminDashboard({ supabase, profile }) {
             <Kpi tone="u" label="બાકી" value={studentProgress ? studentProgressCounts.pending.toLocaleString() : '—'} />
           </div>
           <div className="card dash-card">
-            <h3>વિદ્યાર્થી પ્રમાણે {monthLabel(month)} assessment · {scope.school.name}</h3>
+            <div className="row between">
+              <h3>વિદ્યાર્થી પ્રમાણે {monthLabel(month)} assessment · {scope.school.name}</h3>
+              {backButton}
+            </div>
             {studentProgressError && <p className="error" role="alert">{studentProgressError}</p>}
             {!studentProgress && !studentProgressError && <p className="muted" role="status">વિદ્યાર્થી પ્રગતિ લોડ થાય છે…</p>}
             {studentProgress && (
@@ -349,6 +401,7 @@ export default function AdminDashboard({ supabase, profile }) {
         <div className="card dash-card">
           <div className="row between">
             <h3>{LEVEL_TITLE[level]} પ્રમાણે – {monthLabel(month)} {gradeInfo ? `· ${gradeInfo.label}` : ''}</h3>
+            {backButton}
             <div className="dash-table-tools">
               <input className="dash-search" placeholder={`${LEVEL_TITLE[level]} શોધો…`} value={q} onChange={(e) => setQ(e.target.value)} />
               <label>માસ
@@ -363,6 +416,7 @@ export default function AdminDashboard({ supabase, profile }) {
               <thead>
                 <tr>
                   <th className="left">{LEVEL_TITLE[level]}</th>
+                  {level !== 'school' && <><th>શાળા</th><th>બાકી શાળા</th></>}
                   <th>રજિસ્ટર</th><th>એન્ટ્રી</th>
                   <th className="hu">ઉદયમાન</th><th className="hp">પ્રગતિશીલ</th><th className="hn">નિપુણ</th>
                   <th className="wide">વિતરણ</th><th>નિપુણ %</th>
@@ -372,6 +426,10 @@ export default function AdminDashboard({ supabase, profile }) {
                 {rows.map((r) => (
                   <tr key={r.group_key + (r.school_id || '')} onClick={() => drill(r)} className="tap">
                     <td className="left">{r.group_label}{r.school_code && <small> · {r.school_code}</small>}</td>
+                    {level !== 'school' && (() => {
+                      const info = schoolsByGroup.get(r.group_key) || { total: 0, pending: 0 };
+                      return <><td>{info.total}</td><td className={info.pending ? 'cu' : ''}>{info.pending}</td></>;
+                    })()}
                     <td>{Number(r.registered).toLocaleString()}</td>
                     <td>{Number(r.entered).toLocaleString()} <small>({pct(Number(r.entered), Number(r.registered))}%)</small></td>
                     <td className="cu">{r.uday}</td><td className="cp">{r.pragati}</td><td className="cn">{r.nipun}</td>
@@ -379,17 +437,20 @@ export default function AdminDashboard({ supabase, profile }) {
                     <td><b>{pct(Number(r.nipun), Number(r.registered))}%</b></td>
                   </tr>
                 ))}
-                {!rows.length && !busy && <tr><td colSpan="8" className="muted">કોઈ ડેટા મળ્યો નથી.</td></tr>}
+                {!rows.length && !busy && <tr><td colSpan={level === 'school' ? 8 : 10} className="muted">કોઈ ડેટા મળ્યો નથી.</td></tr>}
               </tbody>
               {rows.length > 0 && (
                 <tfoot><tr>
-                  <td className="left">કુલ</td><td>{totals.registered.toLocaleString()}</td><td>{totals.entered.toLocaleString()}</td>
+                  <td className="left">કુલ</td>
+                  {level !== 'school' && <><td>{schoolStats?.total ?? '—'}</td><td className="cu">{schoolStats?.pending ?? '—'}</td></>}
+                  <td>{totals.registered.toLocaleString()}</td><td>{totals.entered.toLocaleString()}</td>
                   <td className="cu">{totals.u}</td><td className="cp">{totals.p}</td><td className="cn">{totals.n}</td>
                   <td><TriBar u={totals.u} p={totals.p} n={totals.n} /></td><td><b>{pct(totals.n, totals.registered)}%</b></td>
                 </tr></tfoot>
               )}
             </table>
           </div>
+          {canGoBack && <div className="dash-back-foot">{backButton}</div>}
         </div>
       )}
 

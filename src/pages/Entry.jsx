@@ -18,6 +18,14 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   const savingRef = useRef(false);
   const [assessmentDate, setAssessmentDate] = useState(() => defaultAssessmentDate(month));
   const [assessmentDateDirty, setAssessmentDateDirty] = useState(false);
+  // Nava vidyarthi mate badha vidhan pahelethi ✓ (haa); khota hoy te j ✗ karo.
+  const [defaultYes, setDefaultYes] = useState(() => {
+    try { return localStorage.getItem('fln-entry-default-yes') !== '0'; } catch { return true; }
+  });
+  const toggleDefaultYes = (value) => {
+    setDefaultYes(value);
+    try { localStorage.setItem('fln-entry-default-yes', value ? '1' : '0'); } catch { /* storage unavailable */ }
+  };
 
   const dirty = Object.keys(draft).length > 0 || (assessmentDateDirty && entries?.length > 0);
 
@@ -79,8 +87,18 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
     setRowErrors((current) => current.filter((item) => item.studentId !== studentId));
   }
 
+  const allYesAnswers = () => Object.fromEntries((STATEMENTS[dhoran] || []).map((statement) => [statement.n, true]));
+  const unsavedDefaults = () => (defaultYes && students && entries
+    ? students.filter((student) => !entries.some((entry) => entry.student_id === student.id) && !draft[student.id])
+    : []);
+
   async function saveChanges() {
-    if (savingRef.current || !dirty) return;
+    if (savingRef.current) return;
+    const seededRows = unsavedDefaults();
+    if (!dirty && !seededRows.length) return;
+    if (seededRows.length && !window.confirm(
+      `${seededRows.length} વિદ્યાર્થીની બધી વિધાન ✓ (હા) તરીકે સાચવાશે.\n\nજે ખોટા હોય તે ✗ કર્યા હોય તો જ આગળ વધો. સાચવીએ?`
+    )) return;
     savingRef.current = true;
     setSaving(true);
     setSavedMessage('');
@@ -90,6 +108,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
     const failures = [];
     const savedRows = [];
     const pendingByStudent = new Map(Object.entries(draft).map(([studentId, answers]) => [studentId, answers]));
+    seededRows.forEach((student) => pendingByStudent.set(student.id, allYesAnswers()));
     if (assessmentDateDirty) {
       entries.forEach((entry) => {
         if (!pendingByStudent.has(entry.student_id)) pendingByStudent.set(entry.student_id, entry.answers || {});
@@ -160,6 +179,12 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   Object.entries(draft).forEach(([studentId, answers]) => {
     visibleByStudent[studentId] = { ...byStudent[studentId], student_id: studentId, answers };
   });
+  const seeded = unsavedDefaults();
+  seeded.forEach((student) => {
+    visibleByStudent[student.id] = { student_id: student.id, answers: allYesAnswers(), seeded: true };
+  });
+  const wrongCount = students.reduce((sum, student) => sum
+    + Object.values(visibleByStudent[student.id]?.answers || {}).filter((value) => value === false).length, 0);
   if (view === 'card' && openId !== null) {
     const index = students.findIndex((student) => student.id === openId);
     if (index >= 0) {
@@ -172,7 +197,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
             index={index}
             count={students.length}
             dhoran={dhoran}
-            answers={draft[openId] || byStudent[openId]?.answers || {}}
+            answers={visibleByStudent[openId]?.answers || {}}
             onChange={(answers) => changeAnswers(openId, answers)}
             onPrev={() => index > 0 && setOpenId(students[index - 1].id)}
             onNext={() => (index < students.length - 1 ? setOpenId(students[index + 1].id) : setOpenId(null))}
@@ -205,7 +230,9 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
         <div className="entry-progress">
           <div className="entry-progress-head">
             <span><b>{doneCount}</b> / {students.length} વિદ્યાર્થી પૂર્ણ</span>
-            {dirty && <span className="entry-dirty">● સાચવવાના ફેરફાર છે</span>}
+            {(dirty || seeded.length > 0) && (
+              <span className="entry-dirty">● {seeded.length > 0 ? `${seeded.length} વિદ્યાર્થી ડિફોલ્ટ ✓ સાથે સાચવવાના બાકી` : 'સાચવવાના ફેરફાર છે'}</span>
+            )}
           </div>
           <div className="dash-bar big"><i className="n" style={{ width: `${students.length ? (doneCount / students.length) * 100 : 0}%` }} /></div>
           <div className="entry-tri">
@@ -226,6 +253,14 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
             }}
           />
         </label>
+      </div>
+
+      <div className="entry-default">
+        <label>
+          <input type="checkbox" checked={defaultYes} onChange={(event) => toggleDefaultYes(event.target.checked)} />
+          <span><b>બધા ✓ પહેલેથી પસંદ</b> (નવા વિદ્યાર્થી માટે) — ખોટા હોય તે જ ✗ કરો</span>
+        </label>
+        <span className="entry-wrong" title="આ વર્ગમાં ✗ (ના) તરીકે ચિહ્નિત વિધાન">✗ ખોટા: <b>{wrongCount}</b></span>
       </div>
 
       <div className="entry-modes" role="tablist">
@@ -271,7 +306,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
         </>
       )}
       <section className="entry-save no-print">
-        <button className="primary" disabled={!dirty || saving} onClick={saveChanges}>
+        <button className="primary" disabled={(!dirty && !seeded.length) || saving} onClick={saveChanges}>
           {saving ? 'સાચવાઈ રહ્યું છે…' : '💾 એન્ટ્રી સાચવો'}
         </button>
         {savedMessage && <p className="success" role="status">{savedMessage}</p>}
@@ -399,6 +434,13 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
     Object.fromEntries(full.map((statement) => [statement.n, true]))
   );
   const fillColumn = (number, value) => students.forEach((student) => setVal(student, number, value));
+  // 'all' = every student has ✓ in this column, 'some' = a few, 'none' = nobody.
+  const columnState = (number) => {
+    const count = students.filter((student) => byStudent[student.id]?.answers?.[number] === true).length;
+    if (!students.length || !count) return 'none';
+    return count === students.length ? 'all' : 'some';
+  };
+  const rowAllYes = (answers) => full.length > 0 && full.every((statement) => answers[statement.n] === true);
 
   function advance(r, c) {
     if (c < list.length - 1) return { r, c: c + 1 };
@@ -484,7 +526,18 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
               <th className="stick">આખી કૉલમ ભરો ↓</th>
               {list.map((statement) => (
                 <th key={statement.n}>
-                  <button className="mini yes" disabled={saving} title="આખા વર્ગ માટે ✓" onClick={() => fillColumn(statement.n, true)}>✓</button>
+                  {(() => {
+                    const state = columnState(statement.n);
+                    return (
+                      <button
+                        className={`mini yes${state === 'all' ? ' on' : state === 'some' ? ' part' : ''}`}
+                        aria-pressed={state === 'all'}
+                        disabled={saving}
+                        title={state === 'all' ? 'આખી કૉલમ ખાલી કરો' : 'આખા વર્ગ માટે ✓'}
+                        onClick={() => fillColumn(statement.n, state === 'all' ? undefined : true)}
+                      >✓</button>
+                    );
+                  })()}
                 </th>
               ))}
             </tr>
@@ -510,7 +563,14 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
                       </td>
                     );
                   })}
-                  <td><button className="mini" disabled={saving} onClick={() => allYes(student)}>બધા ✓</button></td>
+                  <td>
+                    <button
+                      className={`mini yes${rowAllYes(answers) ? ' on' : ''}`}
+                      aria-pressed={rowAllYes(answers)}
+                      disabled={saving}
+                      onClick={() => (rowAllYes(answers) ? onChange(student.id, {}) : allYes(student))}
+                    >બધા ✓</button>
+                  </td>
                   <td className="num">{status.yes}/{status.total}</td>
                   <td>
                     {status.cat ? (
