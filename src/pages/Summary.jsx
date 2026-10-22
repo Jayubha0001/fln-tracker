@@ -1,3 +1,4 @@
+import { SummaryGuide, GradeInsight } from '../components/SummaryHelp.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { CLASSES, CAT, MONTHS, calc } from '../lib/category';
@@ -22,6 +23,7 @@ export default function Summary({
   dhoran = '1',
   month = DEFAULT_MONTH,
   isAdmin = false,
+  scopeLabel = 'તમારા વિસ્તાર',
 }) {
   const [students, setStudents] = useState(null);
   const [entries, setEntries] = useState(null);
@@ -29,6 +31,17 @@ export default function Summary({
   const [selectedGrade, setSelectedGrade] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(month);
   const [error, setError] = useState('');
+  const [ownSchools, setOwnSchools] = useState([]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    let mounted = true;
+    loadAllRows(supabase.from('schools').select('id,code,name,district,block,active').eq('active', true).order('name').order('code'))
+      .then((rows) => { if (mounted) setOwnSchools(rows); })
+      .catch(() => { /* fall back to the schools prop */ });
+    return () => { mounted = false; };
+  }, [supabase, isAdmin]);
+  const allSchools = isAdmin && ownSchools.length ? ownSchools : schools;
 
   useEffect(() => {
     setSelectedSchoolId(school?.id || (isAdmin ? 'all' : ''));
@@ -61,10 +74,10 @@ export default function Summary({
     return () => { mounted = false; };
   }, [supabase, school?.id, isAdmin]);
 
-  const selectedSchool = schools.find((item) => item.id === selectedSchoolId)
+  const selectedSchool = allSchools.find((item) => item.id === selectedSchoolId)
     || (school?.id === selectedSchoolId ? school : null);
-  const schoolOptions = isAdmin ? schools : school ? [school] : [];
-  const schoolMap = useMemo(() => new Map(schools.map((item) => [item.id, item])), [schools]);
+  const schoolOptions = isAdmin ? allSchools : school ? [school] : [];
+  const schoolMap = useMemo(() => new Map(allSchools.map((item) => [item.id, item])), [allSchools]);
 
   if (!students || !entries) {
     return <p className={error ? 'error' : ''} role={error ? 'alert' : undefined}>{error || 'લોડ થાય છે…'}</p>;
@@ -123,7 +136,7 @@ export default function Summary({
       });
     });
     const comparisonSchools = selectedSchoolId === 'all'
-      ? schools
+      ? allSchools
       : schoolOptions.filter((item) => item.id === selectedSchoolId);
     const schoolComparisonRows = reportGrades.flatMap(([grade, info]) => comparisonSchools.map((item) => {
       const gradeStudents = (students || []).filter((student) =>
@@ -180,6 +193,7 @@ export default function Summary({
 
   return (
     <div className="summary-page">
+      <SummaryGuide scopeLabel={scopeLabel} />
       <div className="row summary-filters no-print">
         {isAdmin && (
           <label>
@@ -238,7 +252,7 @@ export default function Summary({
           };
         });
         const gradeSchoolTotals = isAdmin && selectedSchoolId === 'all'
-          ? schools.map((item) => {
+          ? allSchools.map((item) => {
             const itemStudents = gradeStudents.filter((student) => student.school_id === item.id);
             const itemStudentIds = new Set(itemStudents.map((student) => student.id));
             const itemEntries = gradeEntries.filter((entry) => itemStudentIds.has(entry.student_id));
@@ -262,6 +276,20 @@ export default function Summary({
               <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી</p>
             ) : (
               <>
+                <GradeInsight
+                  label={info.label}
+                  total={gradeStudents.length}
+                  saved={gradeEntries.length}
+                  done={done}
+                  partial={partial}
+                  pending={pending}
+                  tri={{
+                    U: results.filter((item) => item.entry && item.result.cat === 'U').length,
+                    P: results.filter((item) => item.entry && item.result.cat === 'P').length,
+                    N: results.filter((item) => item.entry && item.result.cat === 'N').length,
+                  }}
+                  skills={gradeSkills}
+                />
                 <div className="summary-counts">
                   <div><span>કુલ નોંધાયેલા</span><b>{gradeStudents.length}</b></div>
                   <div><span>સાચવેલી એન્ટ્રી</span><b>{gradeEntries.length}</b></div>

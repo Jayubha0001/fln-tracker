@@ -9,6 +9,7 @@ import AdminDashboard from './AdminDashboard.jsx';
 import AdminSchoolImport from './AdminSchoolImport.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 import { SchoolRemovePanel } from '../components/SchoolTools.jsx';
+import DataCheck from '../components/DataCheck.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 
 const emptySchool = {
@@ -163,6 +164,15 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           </details>
           <details className="tool">
             <summary>
+              <span className="tool-ico" aria-hidden="true">🔎</span>
+              <b>તપાસ: શાળા ↔ વિદ્યાર્થી</b>
+              <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><DataCheck supabase={supabase} focus="school" /></div>
+          </details>
+          <details className="tool">
+            <summary>
               <span className="tool-ico" aria-hidden="true">🗑</span>
               <b>શાળા કાઢો</b>
               <small>શાળા શોધો, કાઢો અથવા પાછી ચાલુ કરો</small>
@@ -172,6 +182,17 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           </details>
           <p className="muted">શાળા Login બનાવવા, પાસવર્ડ રીસેટ, School ID અને વાર્ષિક report માટે <b>Login &amp; Password Management</b> ટેબમાં “શાળા” પસંદ કરો.</p>
         </>
+      )}
+      {activeSection === 'student-management' && (
+        <details className="tool">
+          <summary>
+            <span className="tool-ico" aria-hidden="true">🔎</span>
+            <b>તપાસ: વિદ્યાર્થી ↔ શાળા</b>
+            <small>શાળા વગરના વિદ્યાર્થી અને વિદ્યાર્થી વગરની શાળા</small>
+            <i className="tool-chev" aria-hidden="true">⌄</i>
+          </summary>
+          <div className="tool-body"><DataCheck supabase={supabase} focus="student" /></div>
+        </details>
       )}
       {activeSection === 'student-management' && (
         <details className="tool">
@@ -269,7 +290,7 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTa
               onEntryDirtyChange(dirty);
             }}
           />}
-          {tab === 'summary' && <Summary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
+          {tab === 'summary' && <Summary supabase={supabase} isAdmin schools={schools} dhoran={dhoran} month={month} scopeLabel="સમગ્ર રાજ્ય (State)" />}
         </>
       )}
     </section>

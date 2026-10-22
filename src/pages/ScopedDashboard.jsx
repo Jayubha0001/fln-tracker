@@ -9,6 +9,7 @@ import DashboardLayout from '../components/DashboardLayout.jsx';
 import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 import { ScopedSchoolTools } from '../components/SchoolTools.jsx';
+import DataCheck from '../components/DataCheck.jsx';
 
 export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
@@ -101,7 +102,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
             onCredentialsVisibilityChange={setCredentialsVisible}
           />
         )}
-        {['schools', 'students', 'entry', 'summary'].includes(activeSection) && (
+        {['schools', 'students', 'entry'].includes(activeSection) && (
           <>
         <div className="card row manager-selectors">
           <label>શાળા
@@ -139,14 +140,45 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
         {activeSection === 'schools' && (
           <ScopedSchoolTools supabase={supabase} onChanged={() => setReloadKey((value) => value + 1)} />
         )}
+        {activeSection === 'schools' && (
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">🔎</span>
+              <b>તપાસ: શાળા ↔ વિદ્યાર્થી</b>
+              <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><DataCheck supabase={supabase} focus="school" /></div>
+          </details>
+        )}
           </>
+        )}
+        {activeSection === 'students' && (
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">🔎</span>
+              <b>તપાસ: વિદ્યાર્થી ↔ શાળા</b>
+              <small>શાળા વગરના વિદ્યાર્થી અને વિદ્યાર્થી વગરની શાળા</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><DataCheck supabase={supabase} focus="student" /></div>
+          </details>
         )}
         {school && activeSection === 'students' && <Students key={school.id} supabase={supabase} school={school} dhoran={dhoran} />}
         {school && activeSection === 'entry' && (
           <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />
         )}
-        {school && activeSection === 'summary' && (
-          <Summary supabase={supabase} school={school} dhoran={dhoran} month={month} />
+        {activeSection === 'summary' && (
+          <Summary
+            supabase={supabase}
+            isAdmin
+            schools={schools}
+            dhoran={dhoran}
+            month={month}
+            scopeLabel={profile.role === 'district'
+              ? `જિલ્લો ${schools[0]?.district || profile.district_code || ''}`
+              : `બ્લોક ${schools[0]?.block || profile.block_code || ''}`}
+          />
         )}
         {schoolsLoaded && !schools.length && !error && <p className="muted">આ વિસ્તાર માટે કોઈ સક્રિય શાળા મળી નથી.</p>}
     </DashboardLayout>

@@ -181,8 +181,9 @@ export default function AdminScopedAccountManagement({
     const results = [];
     const failures = [];
     try {
-      const schools = targets.filter((account) => account.accountType === 'school');
-      if (schools.length) {
+      const allSchools = targets.filter((account) => account.accountType === 'school');
+      for (let start = 0; start < allSchools.length; start += 50) {
+        const schools = allSchools.slice(start, start + 50);
         try {
           const { data, error: invokeError } = await invokeAuthenticatedFunction(supabase, 'create-school-account', {
             body: { schoolIds: schools.map((account) => account.schoolId) },
@@ -248,6 +249,37 @@ export default function AdminScopedAccountManagement({
     } finally {
       setBusy(false);
     }
+  }
+
+  // Ek sathe badha Missing Login: badha pana vanchi (current filters), pachhi 50-50 ni batch ma banave.
+  async function createAllMissing() {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    const missing = [];
+    try {
+      for (let pageNumber = 1; pageNumber <= 200; pageNumber += 1) {
+        const { data, error: invokeError } = await invokeAuthenticatedFunction(supabase, 'admin-scoped-account-management', {
+          body: { action: 'list', accountType, filters: { ...appliedFilters, status: 'missing' }, page: pageNumber, pageSize: PAGE_SIZE },
+        });
+        if (invokeError) throw new Error(await functionError(invokeError));
+        if (!validListResponse(data, pageNumber, PAGE_SIZE)) throw new Error(invalidListResponse(data));
+        missing.push(...data.accounts.filter((account) => account.accountStatus === 'missing'
+          && (account.accountType !== 'school' || account.active)));
+        if (pageNumber * PAGE_SIZE >= data.total) break;
+      }
+    } catch (cause) {
+      setError(`Missing યાદી લોડ ન થઈ: ${cause.message}`);
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    if (!missing.length) {
+      setMessage('કોઈ Missing Login બાકી નથી. ✔');
+      return;
+    }
+    await createAccounts(missing);
   }
 
   async function resetPasswords(targets) {
@@ -462,6 +494,14 @@ export default function AdminScopedAccountManagement({
         </label>
         <button type="submit" className="primary filter-submit" disabled={busy}>ફિલ્ટર લાગુ કરો</button>
       </form>
+      {(!appliedFilters.status || appliedFilters.status === 'missing') && (
+        <div className="row bulk-create-row">
+          <button type="button" className="primary" disabled={busy || loading} onClick={createAllMissing}>
+            ⚡ બધા Missing Login એક સાથે બનાવો
+          </button>
+          <span className="muted">ફિલ્ટર મુજબ બધા પાનાના Missing accounts 50-50 ની batch માં બનશે; અંતે Excel download કરો.</span>
+        </div>
+      )}
       {missingOnPage.length > 0 && (
         <div className="row">
           <button type="button" onClick={() => setSelected(Object.fromEntries(missingOnPage.map((account) => [
@@ -509,19 +549,19 @@ export default function AdminScopedAccountManagement({
                     onChange={(event) => setSelected((current) => ({ ...current, [key]: event.target.checked }))}
                   /></td>
                   <td>{account.accountType}</td>
-                  <td>{account.districtName || '—'} · {account.districtCode || '—'}</td>
-                  <td>{account.blockName ? `${account.blockName} · ${account.blockCode}` : '—'}</td>
-                  <td className="scoped-school-identity">{account.schoolName ? `${account.schoolName} · ${account.loginId}` : '—'}</td>
+                  <td className="nowrap">{account.districtName || '—'} · {account.districtCode || '—'}</td>
+                  <td className="nowrap">{account.blockName ? `${account.blockName} · ${account.blockCode}` : '—'}</td>
+                  <td className="scoped-school-identity" title={account.schoolName || ''}>{account.schoolName ? `${account.schoolName} · ${account.loginId}` : '—'}</td>
                   <td>{account.loginId}</td>
                   <td className={`scoped-account-actions ${account.accountType === 'school' ? 'school-account-actions' : ''}`}>
                     {createAllowed
-                      ? <button type="button" disabled={busy} onClick={() => createAccounts([account])}>Create Login</button>
-                      : <button type="button" disabled={busy || !resetAllowed} onClick={() => resetPasswords([account])}>Reset Password</button>}
-                    <button type="button" disabled={busy} onClick={() => copyText(account.loginId, 'Login ID')}>Copy Login ID</button>
+                      ? <button type="button" className="act-create" disabled={busy} onClick={() => createAccounts([account])}>Create Login</button>
+                      : <button type="button" className="act-reset" disabled={busy || !resetAllowed} onClick={() => resetPasswords([account])}>Reset Password</button>}
+                    <button type="button" className="act-copy" disabled={busy} onClick={() => copyText(account.loginId, 'Login ID')}>Copy Login ID</button>
                     {account.accountType === 'school' && (
                       <>
                         {profile?.role === 'admin' && (
-                          <button type="button" disabled={busy} onClick={() => editSchool(account)}>Edit School Details</button>
+                          <button type="button" className="act-edit" disabled={busy} onClick={() => editSchool(account)}>Edit School Details</button>
                         )}
                         <SchoolYearReportButton supabase={supabase} school={school} />
                       </>

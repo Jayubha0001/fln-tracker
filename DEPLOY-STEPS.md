@@ -88,3 +88,12 @@ Files: src\pages\Entry.jsx, src\index.css
 - "એન્ટ્રી સાચવો" dabavta confirm puchhay; pachhi te badha vidyarthi ni entry save thay
 - Checkbox thi band kari shakay (browser ma yaad rahe chhe); jyare band hoy to junu khali grid
 - Jemni entry pehla thi save chhe temna answers badlata nathi
+
+## 11. Navu: tapas tab, bulk login, table layout, Summary samjutti
+Files: src\components\DataCheck.jsx (NAVI), src\components\SummaryHelp.jsx (NAVI), src\pages\Summary.jsx, SchoolSummary.jsx,
+       AdminPanel.jsx, ScopedDashboard.jsx, AdminScopedAccountManagement.jsx, src\index.css
+- "🔎 તપાસ" panel: School ane Student Management ma (Admin/District/Block) - vidyarthi vagar ni shala + shala vagar na vidyarthi
+- Login & Password: "⚡ બધા Missing Login એક સાથે બનાવો" (50-50 batch; create-school-account / create-scoped-account deploy thayela hova joiye)
+- Table: District/Block ek line ma, center, navu colour; buttons ek line ma
+- Summary & Analytics: Admin = samagra rajya, District = potano jillo, Block = potano block, School = potani shala; sathe saral bhasha ma sar + "kevi rite vanchvu" guide
+- Navi migration/function nathi joitu

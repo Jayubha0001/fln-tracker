@@ -3,6 +3,7 @@ import * as XLSX from '@e965/xlsx';
 import { CAT, CLASSES, MONTHS, calc } from '../lib/category';
 import { STATEMENTS } from '../data/statements';
 import { loadAllRows } from '../lib/loadAllRows';
+import { SummaryGuide } from '../components/SummaryHelp.jsx';
 
 const GRADES = Object.keys(CLASSES);
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
@@ -123,6 +124,7 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
 
   return (
     <div className="ss">
+      <SummaryGuide scopeLabel="તમારી શાળા" />
       <div className="ss-actions no-print">
         <button onClick={() => window.print()}>🖨 PDF / પ્રિન્ટ</button>
         <button onClick={exportExcel}>⬇ Excel</button>
