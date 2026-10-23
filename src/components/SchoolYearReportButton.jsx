@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { invokeBinaryFunction } from '../lib/invokeBinaryFunction.js';
 
 async function invokeErrorMessage(error) {
   if (error?.context instanceof Response) {
@@ -21,9 +22,8 @@ export default function SchoolYearReportButton({ supabase, school }) {
     setBusy(true);
     setError('');
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
+      const { data, error: invokeError } = await invokeBinaryFunction(supabase, 'admin-reports', {
         body: { action: 'school-year-report', schoolId: school.id },
-        responseType: 'blob',
       });
       if (invokeError) throw new Error(await invokeErrorMessage(invokeError));
       if (!(data instanceof Blob) || data.size === 0) {

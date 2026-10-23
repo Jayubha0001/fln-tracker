@@ -52,7 +52,7 @@ export default function AdminDashboard({ supabase, profile }) {
   const [ledger, setLedger] = useState([]);
   const [groupsLevel, setGroupsLevel] = useState('district');
   const [schoolRows, setSchoolRows] = useState([]);
-  const [absentInfo, setAbsentInfo] = useState({ bySchool: new Map(), byGrade: new Map() });
+  const [absentInfo, setAbsentInfo] = useState({ bySchool: new Map(), byGrade: new Map(), byMonth: new Map() });
   const [gradeReport, setGradeReport] = useState({});
   const [studentProgress, setStudentProgress] = useState(null);
   const [studentProgressError, setStudentProgressError] = useState('');
@@ -101,14 +101,17 @@ export default function AdminDashboard({ supabase, profile }) {
       // Gerhajar (absent): vidyarthi shala ma chhe pan exam ma nathi; entries ma answers.absent = 'yes'.
       const bySchool = new Map();
       const byGrade = new Map();
+      const byMonth = new Map();
       try {
-        let absentQuery = supabase.from('entries').select('school_id,dhoran').eq('month', month).eq('answers->>absent', 'yes');
+        let absentQuery = supabase.from('entries').select('school_id,dhoran,month').eq('answers->>absent', 'yes');
         if (dhoran) absentQuery = absentQuery.eq('dhoran', dhoran);
         if (scope.school) absentQuery = absentQuery.eq('school_id', scope.school.id);
         const absentRows = await loadAllRows(absentQuery.order('school_id').order('student_id'));
         const inScopeIds = scope.school ? null : new Set(schools.map((item) => item.school_id));
         absentRows.forEach((row) => {
           if (inScopeIds && !inScopeIds.has(row.school_id)) return;
+          byMonth.set(row.month, (byMonth.get(row.month) || 0) + 1);
+          if (row.month !== month) return;
           bySchool.set(row.school_id, (bySchool.get(row.school_id) || 0) + 1);
           byGrade.set(row.dhoran, (byGrade.get(row.dhoran) || 0) + 1);
         });
@@ -122,7 +125,7 @@ export default function AdminDashboard({ supabase, profile }) {
       if (id !== reqId.current) return;
       setGroups(g.data || []);
       setSchoolRows(schools);
-      setAbsentInfo({ bySchool, byGrade });
+      setAbsentInfo({ bySchool, byGrade, byMonth });
       setGroupsLevel(level);
       setLedger(l.data || []);
       setGradeReport(Object.fromEntries(GRADE_KEYS.map((k, i) => {
@@ -498,7 +501,7 @@ export default function AdminDashboard({ supabase, profile }) {
           <table className="dash-ledger-table">
             <thead>
               <tr>
-                <th rowSpan="2">ક્રમ</th><th rowSpan="2">માસનું નામ</th><th rowSpan="2">ધોરણની રજિસ્ટર સંખ્યા</th>
+                <th rowSpan="2">ક્રમ</th><th rowSpan="2">માસનું નામ</th><th rowSpan="2">ધોરણની રજિસ્ટર સંખ્યા</th><th rowSpan="2">ગેરહાજર</th>
                 <th colSpan="3" className="span">FOUNDATIONAL LITERACY AND NUMERACY – FLN ના વિદ્યાર્થીઓની સંખ્યા</th>
                 <th rowSpan="2">FLN માં સિદ્ધિ મેળવેલ વિદ્યાર્થીઓની ટકાવારી</th>
               </tr>
@@ -516,6 +519,7 @@ export default function AdminDashboard({ supabase, profile }) {
                   <tr key={m.key} className={m.key === month ? 'cur' : ''}>
                     <td>{i + 1}</td><td className="left">{m.label}</td>
                     <td>{registered || '—'}</td>
+                    <td className="ca">{absentInfo.byMonth.get(m.key) ?? (has ? 0 : '—')}</td>
                     <td className="cu">{has ? r.uday : '—'}</td><td className="cp">{has ? r.pragati : '—'}</td><td className="cn">{has ? r.nipun : '—'}</td>
                     <td>{has ? <b>{pct(Number(r.nipun), registered)}%</b> : '—'}</td>
                   </tr>
@@ -529,7 +533,7 @@ export default function AdminDashboard({ supabase, profile }) {
           <table className="dash-rules">
             <thead>
               <tr>
-                <th rowSpan="2">ધોરણ</th><th rowSpan="2">કુલ વિધાન</th><th rowSpan="2">રજિસ્ટર</th><th rowSpan="2">એન્ટ્રી</th>
+                <th rowSpan="2">ધોરણ</th><th rowSpan="2">કુલ વિધાન</th><th rowSpan="2">રજિસ્ટર</th><th rowSpan="2">ગેરહાજર</th><th rowSpan="2">એન્ટ્રી</th>
                 <th colSpan="3" className="span">સિદ્ધ કરેલ વિધાનોની સંખ્યા → વિદ્યાર્થીઓ</th>
               </tr>
               <tr><th className="hu">ઉદયમાન</th><th className="hp">પ્રગતિશીલ</th><th className="hn">નિપુણ</th></tr>
@@ -540,7 +544,7 @@ export default function AdminDashboard({ supabase, profile }) {
                 const r = gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 };
                 return (
                   <tr key={k}>
-                    <td className="left"><b>{c.label}</b></td><td>{c.total}</td><td>{r.registered}</td>
+                    <td className="left"><b>{c.label}</b></td><td>{c.total}</td><td>{r.registered}</td><td className="ca">{absentInfo.byGrade.get(k) || 0}</td>
                     <td>{r.entered} <small>({pct(r.entered, r.registered)}%)</small></td>
                     <td className="rb u"><small>{c.udayMax} કે તેથી ઓછા</small><b>{r.u}</b></td>
                     <td className="rb p"><small>{c.udayMax + 1} થી {c.nipunMin - 1}</small><b>{r.p}</b></td>

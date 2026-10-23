@@ -120,3 +120,9 @@ Kaaran: src\pages\AdminDashboard.jsx ma `absentByGroup` pehla vaparyu ane pachhi
 Fix: AdminDashboard.jsx (memo upar lai gaya) + src\main.jsx ane src\components\ErrorBoundary.jsx (have blank na badle error sandesh dekhay)
 Optional smoke test (browser vagar badhi screens render kare): npm i -D jsdom fake-indexeddb ; node tools\smoke.mjs
 Khare ghale: Ctrl+C -> npm run dev -> browser ma Ctrl+Shift+R
+
+## 15. વાર્ષિક શાળા FLN Report / Excel download fix + ledger ma ગેરહાજર
+Kaaran: supabase-js `functions.invoke` xlsx response ne text tarike vanche chhe (responseType option have nathi), etle "ખાલી/અમાન્ય Excel response".
+Fix (frontend j; function badalvi nathi): src\lib\invokeBinaryFunction.js (NAVI), SchoolYearReportButton.jsx, AdminReports.jsx (export / pending / incomplete)
+Ledger: "ધોરણની રજિસ્ટર સંખ્યા" ni baju "ગેરહાજર" (darek mahina), ane ધોરણ-vaar table ma "રજિસ્ટર" ni baju "ગેરહાજર" - Admin/District/Block/School potani scope mujab
+Test: tests\invokeBinaryFunction.test.js

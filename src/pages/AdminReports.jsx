@@ -1,3 +1,4 @@
+import { invokeBinaryFunction } from '../lib/invokeBinaryFunction.js';
 import { useEffect, useState } from 'react';
 import { CLASSES, MONTHS } from '../lib/category';
 import { STATEMENTS } from '../data/statements';
@@ -115,9 +116,8 @@ export default function AdminReports({ supabase, profile }) {
     setError('');
     setExportMessage('');
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
+      const { data, error: invokeError } = await invokeBinaryFunction(supabase, 'admin-reports', {
         body: { action: 'export', filters: applied },
-        responseType: 'blob',
       });
       if (invokeError) {
         setError(await errorMessage(invokeError));
@@ -146,9 +146,8 @@ export default function AdminReports({ supabase, profile }) {
     setError('');
     setExportMessage('');
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
+      const { data, error: invokeError } = await invokeBinaryFunction(supabase, 'admin-reports', {
         body: { action: 'pending-export', filters: applied },
-        responseType: 'blob',
       });
       if (invokeError) {
         setError(await errorMessage(invokeError));
@@ -177,9 +176,8 @@ export default function AdminReports({ supabase, profile }) {
     setError('');
     setExportMessage('');
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-reports', {
+      const { data, error: invokeError } = await invokeBinaryFunction(supabase, 'admin-reports', {
         body: { action: 'incomplete-export', filters: applied },
-        responseType: 'blob',
       });
       if (invokeError) {
         setError(await errorMessage(invokeError));

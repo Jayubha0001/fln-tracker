@@ -106,6 +106,8 @@ const Entry = await load('/src/pages/Entry.jsx');
 const Summary = await load('/src/pages/Summary.jsx');
 const SchoolSummary = await load('/src/pages/SchoolSummary.jsx');
 const Students = await load('/src/pages/Students.jsx');
+const AdminReports = await load('/src/pages/AdminReports.jsx');
+const SchoolYearReportButton = await load('/src/components/SchoolYearReportButton.jsx');
 
 await mount('AdminDashboard(admin)', AdminDashboard, { supabase, profile: adminProfile });
 await mount('AdminDashboard(district)', AdminDashboard, { supabase, profile: distProfile });
@@ -113,6 +115,8 @@ await mount('AdminDashboard(block)', AdminDashboard, { supabase, profile: blockP
 await mount('Entry', Entry, { supabase, school: SCHOOLS[0], dhoran: '1', month: '2026-10', onDirtyChange() {} }, [{ test: /વિધાન પ્રમાણે/ }, { test: /વિદ્યાર્થી પ્રમાણે/ }, { test: /ગેરહાજર/, max: 2 }]);
 await mount('Summary(admin)', Summary, { supabase, isAdmin: true, schools: SCHOOLS, scopeLabel: 'x' }, [{ test: /નોંધાયેલા/, max: 2 }]);
 await mount('SchoolSummary', SchoolSummary, { supabase, school: SCHOOLS[0], dhoran: '1', month: '2026-10' });
+await mount('AdminReports', AdminReports, { supabase, profile: adminProfile });
+await mount('SchoolYearReportButton', SchoolYearReportButton, { supabase, school: SCHOOLS[0] }, [{ test: /વાર્ષિક/ }]);
 await mount('Students', Students, { supabase, school: SCHOOLS[0], dhoran: '1' });
 const navTests = [/School Management/, /Student Management/, /FLN Entry/, /Summary & Analytics/, /Login & Password/, /District \/ Block Reports/, /Dashboard/];
 await mount('AdminPanel(nav all)', AdminPanel, { supabase, profile: adminProfile, onSignOut() {} }, navTests.map((test) => ({ test })));
