@@ -21,7 +21,7 @@ export function SummaryGuide({ scopeLabel }) {
 }
 
 // One short, readable paragraph for a grade.
-export function GradeInsight({ label, total, saved, done, partial, pending, tri, skills }) {
+export function GradeInsight({ label, total, saved, done, partial, pending, absent = 0, tri, skills }) {
   const answered = skills.filter((item) => item.percent !== null && item.answered > 0);
   const weakest = [...answered].sort((a, b) => a.percent - b.percent)[0];
   const strongest = [...answered].sort((a, b) => b.percent - a.percent)[0];
@@ -32,7 +32,7 @@ export function GradeInsight({ label, total, saved, done, partial, pending, tri,
       <p>
         <b>{label}:</b> {total} માંથી <b>{saved}</b> ({savedPct}%) વિદ્યાર્થીની એન્ટ્રી થઈ
         {pending > 0 ? <>, <b>{pending}</b> બાકી છે</> : ', કોઈ બાકી નથી'}
-        {partial > 0 ? <> ({partial} અપૂર્ણ)</> : null}.
+        {partial > 0 ? <> ({partial} અપૂર્ણ)</> : null}{absent > 0 ? <> · {absent} ગેરહાજર</> : null}.
       </p>
       {done > 0 && (
         <p>

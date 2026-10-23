@@ -120,7 +120,7 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
     </form>
   );
 
-  const workspaceSections = ['student-management', 'entry', 'summary'];
+  const workspaceSections = ['student-management', 'entry'];
   const workspaceTab = {
     'student-management': 'students',
     entry: 'entry',
@@ -204,6 +204,9 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           </summary>
           <div className="tool-body"><AdminStudentImport supabase={supabase} schoolsLoaded={schoolsLoaded} /></div>
         </details>
+      )}
+      {activeSection === 'summary' && (
+        <Summary supabase={supabase} isAdmin schools={schools} scopeLabel="સમગ્ર રાજ્ય (State)" />
       )}
       {workspaceSections.includes(activeSection) && (
         <>

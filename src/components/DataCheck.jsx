@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as XLSX from '@e965/xlsx';
 import { loadAllRows } from '../lib/loadAllRows';
 
 const LIMIT = 100;
@@ -8,6 +9,7 @@ const LIMIT = 100;
 export default function DataCheck({ supabase, focus = 'school' }) {
   const [state, setState] = useState({ status: 'idle', result: null, error: '' });
   const [search, setSearch] = useState('');
+  const [countFilter, setCountFilter] = useState('all');
 
   async function run() {
     setState({ status: 'loading', result: null, error: '' });
@@ -42,6 +44,9 @@ export default function DataCheck({ supabase, focus = 'school' }) {
           schoolCount: schools.filter((item) => item.active).length,
           studentCount: students.length,
           noStudents,
+          perSchool: schools.filter((item) => item.active)
+            .map((item) => ({ ...item, count: countBySchool.get(item.id) || 0 }))
+            .sort((a, b) => a.count - b.count || a.name.localeCompare(b.name)),
           orphans: [...orphanMap.values()].sort((a, b) => b.count - a.count),
         },
       });
@@ -52,25 +57,52 @@ export default function DataCheck({ supabase, focus = 'school' }) {
 
   const { status, result, error } = state;
   const needle = search.trim().toLowerCase();
-  const noStudents = (result?.noStudents || []).filter((item) => !needle
-    || `${item.name} ${item.code} ${item.block}`.toLowerCase().includes(needle));
   const orphans = (result?.orphans || []).filter((item) => !needle
     || `${item.name} ${item.code}`.toLowerCase().includes(needle));
   const orphanTotal = (result?.orphans || []).reduce((sum, item) => sum + item.count, 0);
 
+  const perSchool = result?.perSchool || [];
+  const zeroCount = perSchool.filter((item) => item.count === 0).length;
+  const shownSchools = perSchool
+    .filter((item) => countFilter === 'all' || (countFilter === 'zero' ? item.count === 0 : item.count > 0))
+    .filter((item) => !needle || `${item.name} ${item.code} ${item.block} ${item.district}`.toLowerCase().includes(needle));
+
+  function exportExcel() {
+    const rows = perSchool.map((item) => ({
+      'જિલ્લો': item.district, 'બ્લોક': item.block, 'શાળા': item.name, 'શાળા કોડ': item.code,
+      'વિદ્યાર્થી સંખ્યા': item.count, 'સ્થિતિ': item.count ? 'વિદ્યાર્થી છે' : '0 વિદ્યાર્થી',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'School-wise students');
+    XLSX.writeFile(wb, 'school_wise_student_count.xlsx');
+  }
+
   const schoolBlock = (
     <section className="check-block" key="schools">
-      <h4>🏫 વિદ્યાર્થી વગરની શાળા <span className={`check-pill ${result?.noStudents.length ? 'warn' : 'ok'}`}>{result?.noStudents.length ?? 0}</span></h4>
-      {!result?.noStudents.length
-        ? <p className="muted">✔ બધી શાળામાં ઓછામાં ઓછો એક વિદ્યાર્થી છે.</p>
-        : (
-          <ul className="list check-list">
-            {noStudents.slice(0, LIMIT).map((item) => (
-              <li key={item.id}><span><b>{item.name}</b> <small>({item.code})</small><br /><small className="muted">{item.district} › {item.block}</small></span></li>
+      <h4>🏫 શાળા પ્રમાણે વિદ્યાર્થી સંખ્યા <span className={`check-pill ${zeroCount ? 'warn' : 'ok'}`}>0 વિદ્યાર્થી: {zeroCount}</span></h4>
+      <div className="row check-filters">
+        {[['all', `બધી (${perSchool.length})`], ['zero', `0 વિદ્યાર્થી (${zeroCount})`], ['has', `વિદ્યાર્થી છે (${perSchool.length - zeroCount})`]].map(([key, label]) => (
+          <button type="button" key={key} className={countFilter === key ? 'on' : ''} onClick={() => setCountFilter(key)}>{label}</button>
+        ))}
+        <button type="button" onClick={exportExcel}>⬇ Excel</button>
+      </div>
+      <div className="scroll check-table">
+        <table className="report-table">
+          <thead><tr><th>શાળા</th><th>કોડ</th><th>બ્લોક</th><th>વિદ્યાર્થી</th></tr></thead>
+          <tbody>
+            {shownSchools.slice(0, 200).map((item) => (
+              <tr key={item.id} className={item.count === 0 ? 'zero-row' : ''}>
+                <td className="left">{item.name}</td>
+                <td>{item.code}</td>
+                <td>{item.block}</td>
+                <td>{item.count === 0 ? <span className="check-pill warn">0 · વિદ્યાર્થી નથી</span> : <b>{item.count}</b>}</td>
+              </tr>
             ))}
-          </ul>
-        )}
-      {noStudents.length > LIMIT && <small className="muted">પહેલી {LIMIT} બતાવી છે; શોધ વધુ ચોક્કસ કરો.</small>}
+            {!shownSchools.length && <tr><td colSpan="4" className="muted">કોઈ શાળા મળી નથી.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {shownSchools.length > 200 && <small className="muted">પહેલી 200 બતાવી છે ({shownSchools.length} માંથી); શોધ કે ફિલ્ટર વાપરો.</small>}
     </section>
   );
   const studentBlock = (

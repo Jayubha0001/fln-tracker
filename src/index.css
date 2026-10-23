@@ -887,3 +887,35 @@ td.scoped-account-actions > * { display: inline-block; vertical-align: middle; m
 .grade-insight p { margin: 2px 0; }
 .grade-insight .tri { display: inline-block; padding: 0 8px; border-radius: 8px; font-weight: 700; font-size: 12.5px; }
 .grade-insight .tri.n { background: #dff3e6; color: #14783f; } .grade-insight .tri.p { background: #ffe1ef; color: #b02a74; } .grade-insight .tri.u { background: #ffe9cf; color: #b25c00; }
+
+/* ---- Gerhajar (absent) ---- */
+.mini.abs { white-space: nowrap; background: #fff; border: 1px solid #c9d7ec; color: #26394f; border-radius: 8px; font-weight: 700; }
+.mini.abs.on { background: #fff0e0; border-color: #f2a65a; color: #a24a00; }
+th.abs-h { min-width: 92px; background: #fff0e0; color: #a24a00; }
+td.abs-cell { text-align: center; background: #fffaf3; }
+tr.rowabsent td { background: #eceff3 !important; color: #8a95a3; }
+tr.rowabsent td.stick { text-decoration: line-through; }
+tr.rowabsent td.cell { cursor: not-allowed; }
+.skill-students li.is-absent > span { text-decoration: line-through; color: #8a95a3; }
+
+/* ---- Data check table ---- */
+.check-filters { gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
+.check-filters button { min-height: 28px; padding: 2px 12px; border-radius: 14px; border: 1px solid #c9d7ec; background: #fff; font-size: 12px; font-weight: 700; color: #1d3a6a; }
+.check-filters button.on { background: linear-gradient(120deg, #17306b, #2b66b4); color: #fff; border-color: transparent; }
+.check-table { max-height: 360px; overflow: auto; border: 1px solid #dbe5f2; border-radius: 12px; }
+.check-table td, .check-table th { padding: 4px 10px; text-align: center; white-space: nowrap; }
+.check-table td.left { text-align: left; white-space: normal; }
+.check-table tr.zero-row td { background: #fff1f1; }
+
+/* ---- Sortable headers ---- */
+th.sortable { padding: 0; }
+.sort-btn { width: 100%; min-height: 32px; padding: 4px 8px; background: transparent; border: 0; border-radius: 0; font: inherit; font-weight: 800; color: inherit; cursor: pointer; white-space: nowrap; }
+.sort-btn:hover { background: #ffe9cf; }
+.sort-btn span { font-size: 10px; opacity: .7; }
+td.zero-cell { color: #b02a74; font-weight: 800; background: #fff1f1; }
+
+/* ---- Absent in dashboard ---- */
+.ov-donut-seg.a { stroke: #6e8aa3; } .ov-donut-seg.i { stroke: #c9d4e0; }
+.ov-legend i.a { background: #6e8aa3; } .ov-legend i.i { background: #c9d4e0; }
+.ov-kpi.teal { --tone: #2a8a9a; --tint: #d9f1f5; }
+.dash-table td.ca, .dash-table th.ca { color: #3d5a73; font-weight: 700; }

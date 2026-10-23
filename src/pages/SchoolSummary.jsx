@@ -4,6 +4,7 @@ import { CAT, CLASSES, MONTHS, calc } from '../lib/category';
 import { STATEMENTS } from '../data/statements';
 import { loadAllRows } from '../lib/loadAllRows';
 import { SummaryGuide } from '../components/SummaryHelp.jsx';
+import { isAbsent } from '../lib/absent.js';
 
 const GRADES = Object.keys(CLASSES);
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
@@ -79,7 +80,8 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
       byGrade[g] = {
         total: sts.length,
         saved: monthEntries.size,
-        incomplete: rows.filter((row) => row.entry && !row.r.cat).length,
+        incomplete: rows.filter((row) => row.entry && !row.r.cat && !isAbsent(row.entry.answers)).length,
+        absent: rows.filter((row) => row.entry && isAbsent(row.entry.answers)).length,
         rows,
         cnt,
         ledger,
@@ -97,6 +99,7 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
   const allTotal = GRADES.reduce((t, k) => t + data[k].total, 0);
   const allSaved = GRADES.reduce((t, k) => t + data[k].saved, 0);
   const allIncomplete = GRADES.reduce((t, k) => t + data[k].incomplete, 0);
+  const allAbsent = GRADES.reduce((t, k) => t + data[k].absent, 0);
   const allN = GRADES.reduce((t, k) => t + data[k].cnt.N, 0);
   const weakest = g.skills.filter((s) => s.p !== null).sort((a, b) => a.p - b.p).slice(0, 3);
   const list = tab === 'T'
@@ -132,9 +135,10 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
 
       <div className="dash-kpis">
         <div className="dash-kpi"><span>કુલ વિદ્યાર્થી</span><b>{allTotal}</b><small>3 ધોરણ</small></div>
-        <div className="dash-kpi"><span>{monthLabel(month)} એન્ટ્રી</span><b>{allSaved}</b><small>{pct(allSaved, allTotal)}% પૂર્ણ</small></div>
+        <div className="dash-kpi"><span>{monthLabel(month)} એન્ટ્રી</span><b>{allSaved}</b><small>{pct(allSaved, allTotal)}% · ગેરહાજર સહિત</small></div>
         <div className="dash-kpi p"><span>અપૂર્ણ મૂલ્યાંકન</span><b>{allIncomplete}</b><small>બધા જવાબ હજી નોંધાયા નથી</small></div>
         <div className="dash-kpi n"><span>નિપુણ</span><b>{allN}</b><small>{pct(allN, allTotal)}% વિદ્યાર્થી</small></div>
+        <div className="dash-kpi"><span>ગેરહાજર</span><b>{allAbsent}</b><small>શાળામાં છે, પરીક્ષામાં નથી</small></div>
         <div className="dash-kpi u"><span>બાકી assessment</span><b>{allTotal - allSaved}</b><small>હાલના મહિને entry નથી</small></div>
       </div>
 

@@ -35,13 +35,16 @@ function OverviewKpi({ tone, icon, label, value, sub }) {
 }
 
 function Donut({ totals }) {
+  const incomplete = Math.max(0, totals.entered - totals.u - totals.p - totals.n - (totals.absent || 0));
   const radius = 62;
   const circumference = 2 * Math.PI * radius;
   const parts = [
     { key: 'u', value: totals.u, label: 'ઉદયમાન' },
     { key: 'p', value: totals.p, label: 'પ્રગતિશીલ' },
     { key: 'n', value: totals.n, label: 'નિપુણ' },
-  ];
+    { key: 'a', value: totals.absent || 0, label: 'ગેરહાજર' },
+    { key: 'i', value: incomplete, label: 'અપૂર્ણ' },
+  ].filter((part) => ['u', 'p', 'n'].includes(part.key) || part.value > 0);
   let offset = 0;
   return (
     <div className="ov-donut-wrap">
@@ -185,10 +188,11 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
     <div className="ov">
       <div className="ov-kpis">
         <OverviewKpi tone="blue" icon="people" label="રજિસ્ટર સંખ્યા" value={fmt(totals.registered)} sub={`${rows.length} ${unitTitle}`} />
-        <OverviewKpi tone="green" icon="bars" label={`${monthLabel} એન્ટ્રી`} value={fmt(totals.entered)} sub={`${pct(totals.entered, totals.registered)}% પૂર્ણ`} />
+        <OverviewKpi tone="green" icon="bars" label={`${monthLabel} એન્ટ્રી`} value={fmt(totals.entered)} sub={`${pct(totals.entered, totals.registered)}% · ગેરહાજર સહિત`} />
         <OverviewKpi tone="amber" icon="doc" label="ઉદયમાન" value={fmt(totals.u)} sub={`${pct(totals.u, totals.entered)}%`} />
         <OverviewKpi tone="pink" icon="trend" label="પ્રગતિશીલ" value={fmt(totals.p)} sub={`${pct(totals.p, totals.entered)}%`} />
         <OverviewKpi tone="violet" icon="trophy" label="નિપુણ" value={fmt(totals.n)} sub={`${pct(totals.n, totals.entered)}%`} />
+        <OverviewKpi tone="teal" icon="people" label="ગેરહાજર" value={fmt(totals.absent || 0)} sub={`${pct(totals.absent || 0, totals.registered)}% · એન્ટ્રી માં ગણાય`} />
         <OverviewKpi tone="slate" icon="clock" label="બાકી એન્ટ્રી" value={fmt(pending)} sub={`${pct(pending, totals.registered)}% બાકી`} />
       </div>
       {attention.length > 0 && totals.registered > 0 && (
@@ -260,7 +264,7 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
             <div key={card.key} className="ov-grade" title={`ઉદયમાન ${card.u} · પ્રગતિશીલ ${card.p} · નિપુણ ${card.n}`}>
               <div className="ov-grade-head"><b>{card.label}</b><span>નિપુણ {pct(card.n, card.registered)}%</span></div>
               <div className="ov-grade-track"><i style={{ width: `${Math.min(100, pct(card.entered, card.registered))}%` }} /></div>
-              <small>એન્ટ્રી {fmt(card.entered)} / {fmt(card.registered)} · બાકી {fmt(Math.max(0, card.registered - card.entered))}</small>
+              <small>એન્ટ્રી {fmt(card.entered)} / {fmt(card.registered)} · ગેરહાજર {fmt(card.absent || 0)} · બાકી {fmt(Math.max(0, card.registered - card.entered))}</small>
             </div>
           ))}
         </div>

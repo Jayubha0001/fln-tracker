@@ -97,3 +97,26 @@ Files: src\components\DataCheck.jsx (NAVI), src\components\SummaryHelp.jsx (NAVI
 - Table: District/Block ek line ma, center, navu colour; buttons ek line ma
 - Summary & Analytics: Admin = samagra rajya, District = potano jillo, Block = potano block, School = potani shala; sathe saral bhasha ma sar + "kevi rite vanchvu" guide
 - Navi migration/function nathi joitu
+
+## 12. Navu: ગેરહાજર option, Summary filters, shala-vaar vidyarthi ginti
+Files: src\lib\absent.js (NAVI), src\pages\Entry.jsx, AdminDashboard.jsx, Summary.jsx, SchoolSummary.jsx, AdminPanel.jsx,
+       src\components\DataCheck.jsx, SummaryHelp.jsx, src\index.css
+- Entry (Grid / વિધાન પ્રમાણે / વિદ્યાર્થી પ્રમાણે): darek vidyarthi ni baju "☐ ગેરહાજર"; tick karo to aakhi line blank/grey, answers = {absent:'yes'}
+  (boolean nathi etle server reports/SQL ne asar nathi; dashboard ma te "એન્ટ્રી" tarike ganay, U/P/N ma nahi, "બાકી" ma nahi)
+- Summary & Analytics (Admin): upar nu single-shala selector kadhyu; District -> Block -> School (ane "બધી શાળાઓ") filters
+- તપાસ: shala-vaar vidyarthi sankhya table, 0 vidyarthi lal; filter (બધી / 0 / વિદ્યાર્થી છે) + Excel
+- Navi migration/function nathi joitu
+
+## 13. ગેરહાજર badha count ma + sort
+Files: src\pages\AdminDashboard.jsx, src\components\DashboardOverview.jsx, src\pages\Summary.jsx, src\pages\SchoolSummary.jsx, src\index.css
+- Dashboard (Admin/District/Block/School): ગેરહાજર KPI, donut ma alag segment, ધોરણ cards ane unit table ma "ગેરહાજર" column
+  Total = ઉદયમાન + પ્રગતિશીલ + નિપુણ + અપૂર્ણ + ગેરહાજર (= એન્ટ્રી) + બાકી (= રજિસ્ટર)
+- Summary: shala sarkhaman table ma columns: નોંધાયેલા, એન્ટ્રી, પૂર્ણ, અપૂર્ણ, ગેરહાજર, બાકી; darek header par ▲▼ sort; Excel ma pan
+- ગેરહાજર ni ginti entries (answers->>absent = 'yes') thi client side; navi migration nathi joitu
+- Server-side Excel/PDF reports (admin-reports function) ma absent haju alag column nathi (e function ma farak joiye to kaho)
+
+## 14. BLANK SCREEN FIX (localhost)
+Kaaran: src\pages\AdminDashboard.jsx ma `absentByGroup` pehla vaparyu ane pachhi declare thayu ("Cannot access 'absentByGroup' before initialization").
+Fix: AdminDashboard.jsx (memo upar lai gaya) + src\main.jsx ane src\components\ErrorBoundary.jsx (have blank na badle error sandesh dekhay)
+Optional smoke test (browser vagar badhi screens render kare): npm i -D jsdom fake-indexeddb ; node tools\smoke.mjs
+Khare ghale: Ctrl+C -> npm run dev -> browser ma Ctrl+Shift+R

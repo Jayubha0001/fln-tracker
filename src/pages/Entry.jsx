@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CAT, calc } from '../lib/category';
 import { STATEMENTS, STEP, NO_STEP_AREA, LEVEL_LABEL } from '../data/statements';
 import { loadAllRows } from '../lib/loadAllRows';
+import { isAbsent, absentAnswers } from '../lib/absent.js';
 
 export default function Entry({ supabase, school, dhoran, month, onDirtyChange }) {
   const [students, setStudents] = useState(null);
@@ -183,6 +184,11 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   seeded.forEach((student) => {
     visibleByStudent[student.id] = { student_id: student.id, answers: allYesAnswers(), seeded: true };
   });
+  const setAbsent = (studentId, absent) => changeAnswers(
+    studentId,
+    absent ? absentAnswers() : (defaultYes ? allYesAnswers() : {}),
+  );
+  const absentCount = students.filter((student) => isAbsent(visibleByStudent[student.id]?.answers)).length;
   const wrongCount = students.reduce((sum, student) => sum
     + Object.values(visibleByStudent[student.id]?.answers || {}).filter((value) => value === false).length, 0);
   if (view === 'card' && openId !== null) {
@@ -198,6 +204,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
             count={students.length}
             dhoran={dhoran}
             answers={visibleByStudent[openId]?.answers || {}}
+            onSetAbsent={(absent) => setAbsent(openId, absent)}
             onChange={(answers) => changeAnswers(openId, answers)}
             onPrev={() => index > 0 && setOpenId(students[index - 1].id)}
             onNext={() => (index < students.length - 1 ? setOpenId(students[index + 1].id) : setOpenId(null))}
@@ -219,7 +226,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   students.forEach((student) => { const c = statuses.get(student.id).cat; if (c) tri[c] += 1; });
   const shown = students.filter((student) => {
     const st = statuses.get(student.id);
-    if (filter === 'todo' && st.cat) return false;
+    if (filter === 'todo' && (st.cat || isAbsent(visibleByStudent[student.id]?.answers))) return false;
     if (filter === 'done' && !st.cat) return false;
     return !q || student.name.toLowerCase().includes(q.toLowerCase());
   });
@@ -229,7 +236,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
       <div className="entry-top">
         <div className="entry-progress">
           <div className="entry-progress-head">
-            <span><b>{doneCount}</b> / {students.length} વિદ્યાર્થી પૂર્ણ</span>
+            <span><b>{doneCount}</b> / {students.length} વિદ્યાર્થી પૂર્ણ{absentCount > 0 && <> · <b>{absentCount}</b> ગેરહાજર</>}</span>
             {(dirty || seeded.length > 0) && (
               <span className="entry-dirty">● {seeded.length > 0 ? `${seeded.length} વિદ્યાર્થી ડિફોલ્ટ ✓ સાથે સાચવવાના બાકી` : 'સાચવવાના ફેરફાર છે'}</span>
             )}
@@ -270,10 +277,10 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
       </div>
 
       {view === 'grid' && (
-        <Grid students={students} byStudent={visibleByStudent} dhoran={dhoran} onChange={changeAnswers} saving={saving} />
+        <Grid students={students} byStudent={visibleByStudent} dhoran={dhoran} onChange={changeAnswers} onSetAbsent={setAbsent} saving={saving} />
       )}
       {view === 'skill' && (
-        <SkillView students={students} byStudent={visibleByStudent} dhoran={dhoran} onChange={changeAnswers} saving={saving} />
+        <SkillView students={students} byStudent={visibleByStudent} dhoran={dhoran} onChange={changeAnswers} onSetAbsent={setAbsent} saving={saving} />
       )}
       {view === 'card' && (
         <>
@@ -293,7 +300,9 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
                   <span className="stu-name">{student.name}
                     <div className="dash-bar"><i className="n" style={{ width: `${(status.done / status.total) * 100}%` }} /></div>
                   </span>
-                  {status.cat ? (
+                  {isAbsent(visibleByStudent[student.id]?.answers) ? (
+                    <span className="badge todo">ગેરહાજર</span>
+                  ) : status.cat ? (
                     <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label} · {status.yes}/{status.total}</span>
                   ) : (
                     <span className="badge todo">{status.done ? `${status.done}/${status.total}` : 'બાકી'}</span>
@@ -317,21 +326,24 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   );
 }
 
-function SkillView({ students, byStudent, dhoran, onChange, saving }) {
+function SkillView({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
   const list = STATEMENTS[dhoran];
   const [idx, setIdx] = useState(0);
   const st = list[idx];
   const val = (student) => byStudent[student.id]?.answers?.[st.n];
+  const absentOf = (student) => isAbsent(byStudent[student.id]?.answers);
   const set = (student, value) => {
+    if (absentOf(student)) return;
     const answers = { ...byStudent[student.id]?.answers };
     if (answers[st.n] === value) delete answers[st.n]; else answers[st.n] = value;
     onChange(student.id, answers);
   };
-  const setAll = (value) => students.forEach((student) => {
+  const setAll = (value) => students.filter((student) => !absentOf(student)).forEach((student) => {
     onChange(student.id, { ...byStudent[student.id]?.answers, [st.n]: value });
   });
-  const yes = students.filter((student) => val(student) === true).length;
-  const no = students.filter((student) => val(student) === false).length;
+  const present = students.filter((student) => !absentOf(student));
+  const yes = present.filter((student) => val(student) === true).length;
+  const no = present.filter((student) => val(student) === false).length;
   return (
     <div className="skill-view">
       <div className="skill-chips">
@@ -344,7 +356,7 @@ function SkillView({ students, byStudent, dhoran, onChange, saving }) {
       <div className={`skill-card lv-${st.level}`}>
         <small>{st.area}{STEP[st.n] ? ` · પગલું ${STEP[st.n]}` : ''} · {LEVEL_LABEL[st.level]}</small>
         <p><b>{idx + 1}.</b> {st.text}</p>
-        <div className="skill-count"><span className="y">હા {yes}</span><span className="n">ના {no}</span><span>બાકી {students.length - yes - no}</span></div>
+        <div className="skill-count"><span className="y">હા {yes}</span><span className="n">ના {no}</span><span>બાકી {present.length - yes - no}</span><span>ગેરહાજર {students.length - present.length}</span></div>
         <div className="row">
           <button disabled={saving} onClick={() => setAll(true)}>બધા ✓</button>
         </div>
@@ -352,13 +364,15 @@ function SkillView({ students, byStudent, dhoran, onChange, saving }) {
       <ul className="skill-students">
         {students.map((student, i) => {
           const v = val(student);
+          const away = absentOf(student);
           return (
-            <li key={student.id}>
+            <li key={student.id} className={away ? 'is-absent' : ''}>
               <span>{i + 1}. {student.name}</span>
-              <div className="yn">
+              <button type="button" className={`mini abs${away ? ' on' : ''}`} disabled={saving} onClick={() => onSetAbsent(student.id, !away)}>{away ? '☑ ગેરહાજર' : '☐ ગેરહાજર'}</button>
+              {!away && <div className="yn">
                 <button className={v === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(student, true)}>હા</button>
                 <button className={v === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(student, false)}>ના</button>
-              </div>
+              </div>}
             </li>
           );
         })}
@@ -401,7 +415,7 @@ function groupBy(list, keyFn) {
   return result;
 }
 
-function Grid({ students, byStudent, dhoran, onChange, saving }) {
+function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
   const full = STATEMENTS[dhoran];
   const splitAt = full.findIndex((statement) => statement.area === 'સરવાળા');
   const canSplit = full.length > 12 && splitAt > 0;
@@ -421,6 +435,7 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
   }, [active]);
 
   const setVal = (student, number, value) => {
+    if (isAbsent(byStudent[student.id]?.answers)) return;
     const answers = { ...byStudent[student.id]?.answers };
     if (value === undefined) delete answers[number]; else answers[number] = value;
     onChange(student.id, answers);
@@ -436,9 +451,10 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
   const fillColumn = (number, value) => students.forEach((student) => setVal(student, number, value));
   // 'all' = every student has ✓ in this column, 'some' = a few, 'none' = nobody.
   const columnState = (number) => {
-    const count = students.filter((student) => byStudent[student.id]?.answers?.[number] === true).length;
-    if (!students.length || !count) return 'none';
-    return count === students.length ? 'all' : 'some';
+    const present = students.filter((student) => !isAbsent(byStudent[student.id]?.answers));
+    const count = present.filter((student) => byStudent[student.id]?.answers?.[number] === true).length;
+    if (!present.length || !count) return 'none';
+    return count === present.length ? 'all' : 'some';
   };
   const rowAllYes = (answers) => full.length > 0 && full.every((statement) => answers[statement.n] === true);
 
@@ -493,6 +509,7 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
             <tr className="r1">
               <th className="srno" rowSpan="6">ક્રમ</th>
               <th className="stick">ક્ષેત્ર</th>
+              <th rowSpan="6" className="abs-h">ગેરહાજર</th>
               {areaGroups.map((group) => (
                 <th key={group.key} colSpan={group.span} rowSpan={group.key === NO_STEP_AREA ? 2 : 1}>{group.key}</th>
               ))}
@@ -545,11 +562,15 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
           <tbody>
             {students.map((student, r) => {
               const answers = byStudent[student.id]?.answers || {};
+              const away = isAbsent(answers);
               const status = calc(dhoran, answers);
               return (
-                <tr key={student.id} className={active?.r === r ? 'rowact' : ''}>
+                <tr key={student.id} className={`${active?.r === r ? 'rowact' : ''} ${away ? 'rowabsent' : ''}`}>
                   <td className="srno">{r + 1}</td>
                   <td className="stick">{student.name}</td>
+                  <td className="abs-cell">
+                    <button type="button" className={`mini abs${away ? ' on' : ''}`} disabled={saving} onClick={() => onSetAbsent(student.id, !away)}>{away ? '☑ ગેરહાજર' : '☐ ગેરહાજર'}</button>
+                  </td>
                   {list.map((statement, c) => {
                     const value = answers[statement.n];
                     const isActive = active?.r === r && active?.c === c;
@@ -557,9 +578,9 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
                       <td
                         key={statement.n}
                         className={`cell lv-${statement.level} ${value === true ? 'ok' : value === false ? 'bad' : ''} ${isActive ? 'act' : ''}`}
-                        onClick={() => { if (saving) return; setActive({ r, c }); cycle(student, statement.n); }}
+                        onClick={() => { if (saving || away) return; setActive({ r, c }); cycle(student, statement.n); }}
                       >
-                        {value === true ? '✓' : value === false ? '✗' : ''}
+                        {away ? '' : value === true ? '✓' : value === false ? '✗' : ''}
                       </td>
                     );
                   })}
@@ -567,13 +588,13 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
                     <button
                       className={`mini yes${rowAllYes(answers) ? ' on' : ''}`}
                       aria-pressed={rowAllYes(answers)}
-                      disabled={saving}
+                      disabled={saving || away}
                       onClick={() => (rowAllYes(answers) ? onChange(student.id, {}) : allYes(student))}
                     >બધા ✓</button>
                   </td>
-                  <td className="num">{status.yes}/{status.total}</td>
+                  <td className="num">{away ? '—' : `${status.yes}/${status.total}`}</td>
                   <td>
-                    {status.cat ? (
+                    {away ? <span className="badge todo">ગેરહાજર</span> : status.cat ? (
                       <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label}</span>
                     ) : (
                       <span className="muted">{status.done ? `${status.done}/${status.total}` : ''}</span>
@@ -599,7 +620,8 @@ function Grid({ students, byStudent, dhoran, onChange, saving }) {
   );
 }
 
-function StudentForm({ student, index, count, dhoran, answers, onChange, onPrev, onNext, onClose, saving, onSave }) {
+function StudentForm({ student, index, count, dhoran, answers, onChange, onSetAbsent, onPrev, onNext, onClose, saving, onSave }) {
+  const away = isAbsent(answers);
   const list = STATEMENTS[dhoran];
   const status = calc(dhoran, answers);
 
@@ -629,10 +651,12 @@ function StudentForm({ student, index, count, dhoran, answers, onChange, onPrev,
         <div className="row">
           <button className="primary" disabled={saving} onClick={allYes}>બધા હા</button>
           <button disabled={saving} onClick={clear}>બધું સાફ</button>
+          <button type="button" className={`mini abs${away ? ' on' : ''}`} disabled={saving} onClick={() => onSetAbsent(!away)}>{away ? '☑ ગેરહાજર' : '☐ ગેરહાજર'}</button>
         </div>
       </div>
+      {away && <p className="muted">આ વિદ્યાર્થી ગેરહાજર છે; આ માસ માટે કોઈ વિધાન ભરવાના નથી. સાચવવા માટે નીચે 💾 દબાવો.</p>}
 
-      {areas.map((group) => {
+      {!away && areas.map((group) => {
         const items = list.slice(cursor, cursor + group.span);
         const start = cursor;
         cursor += group.span;

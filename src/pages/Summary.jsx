@@ -1,4 +1,5 @@
 import { SummaryGuide, GradeInsight } from '../components/SummaryHelp.jsx';
+import { isAbsent } from '../lib/absent.js';
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { CLASSES, CAT, MONTHS, calc } from '../lib/category';
@@ -32,6 +33,9 @@ export default function Summary({
   const [selectedMonth, setSelectedMonth] = useState(month);
   const [error, setError] = useState('');
   const [ownSchools, setOwnSchools] = useState([]);
+  const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
+  const [districtSel, setDistrictSel] = useState('');
+  const [blockSel, setBlockSel] = useState('');
 
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -42,6 +46,12 @@ export default function Summary({
     return () => { mounted = false; };
   }, [supabase, isAdmin]);
   const allSchools = isAdmin && ownSchools.length ? ownSchools : schools;
+  const districtOptions = useMemo(() => [...new Set(allSchools.map((item) => item.district).filter(Boolean))].sort(), [allSchools]);
+  const blockOptions = useMemo(() => [...new Set(allSchools
+    .filter((item) => !districtSel || item.district === districtSel)
+    .map((item) => item.block).filter(Boolean))].sort(), [allSchools, districtSel]);
+  const scopedSchools = useMemo(() => allSchools
+    .filter((item) => (!districtSel || item.district === districtSel) && (!blockSel || item.block === blockSel)), [allSchools, districtSel, blockSel]);
 
   useEffect(() => {
     setSelectedSchoolId(school?.id || (isAdmin ? 'all' : ''));
@@ -84,13 +94,17 @@ export default function Summary({
   }
 
   const monthLabel = MONTHS.find((item) => item.key === selectedMonth)?.label || selectedMonth;
+  const scopedIds = new Set(scopedSchools.map((item) => item.id));
+  const inScope = (schoolId) => (selectedSchoolId !== 'all'
+    ? schoolId === selectedSchoolId
+    : (!districtSel && !blockSel) || scopedIds.has(schoolId));
 
   function download() {
     const reportGrades = Object.entries(CLASSES)
       .filter(([grade]) => selectedGrade === 'all' || grade === selectedGrade);
     const summaryRows = reportGrades.map(([grade, info]) => {
       const gradeStudents = (students || []).filter((student) =>
-        (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+        (inScope(student.school_id))
         && student.dhoran === grade
       );
       const ids = new Set(gradeStudents.map((student) => student.id));
@@ -112,7 +126,7 @@ export default function Summary({
     });
     const studentRows = reportGrades.flatMap(([grade, info]) => {
       const gradeStudents = (students || []).filter((student) =>
-        (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+        (inScope(student.school_id))
         && student.dhoran === grade
       );
       const lookup = new Map((entries || [])
@@ -136,7 +150,7 @@ export default function Summary({
       });
     });
     const comparisonSchools = selectedSchoolId === 'all'
-      ? allSchools
+      ? scopedSchools
       : schoolOptions.filter((item) => item.id === selectedSchoolId);
     const schoolComparisonRows = reportGrades.flatMap(([grade, info]) => comparisonSchools.map((item) => {
       const gradeStudents = (students || []).filter((student) =>
@@ -147,6 +161,7 @@ export default function Summary({
         ids.has(entry.student_id) && entry.dhoran === grade && entry.month === selectedMonth
       );
       const complete = gradeEntries.filter((entry) => calc(grade, entry.answers).cat).length;
+      const absentCount = gradeEntries.filter((entry) => isAbsent(entry.answers)).length;
       return {
         'શાળા': item.name,
         'શાળા કોડ': item.code,
@@ -154,13 +169,14 @@ export default function Summary({
         'નોંધાયેલા': gradeStudents.length,
         'સાચવેલી એન્ટ્રી': gradeEntries.length,
         'પૂર્ણ': complete,
-        'અપૂર્ણ': gradeEntries.length - complete,
+        'અપૂર્ણ': gradeEntries.length - complete - absentCount,
+        'ગેરહાજર': absentCount,
         'બાકી': Math.max(0, gradeStudents.length - gradeEntries.length),
       };
     }));
     const skillRows = reportGrades.flatMap(([grade, info]) => {
       const gradeStudents = (students || []).filter((student) =>
-        (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+        (inScope(student.school_id))
         && student.dhoran === grade
       );
       const ids = new Set(gradeStudents.map((student) => student.id));
@@ -196,13 +212,29 @@ export default function Summary({
       <SummaryGuide scopeLabel={scopeLabel} />
       <div className="row summary-filters no-print">
         {isAdmin && (
-          <label>
-            શાળા
-            <select value={selectedSchoolId} onChange={(event) => setSelectedSchoolId(event.target.value)}>
-              <option value="all">બધી શાળાઓ</option>
-              {schoolOptions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}
-            </select>
-          </label>
+          <>
+            <label>
+              જિલ્લો
+              <select value={districtSel} onChange={(event) => { setDistrictSel(event.target.value); setBlockSel(''); setSelectedSchoolId('all'); }}>
+                <option value="">બધા જિલ્લા</option>
+                {districtOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              બ્લોક
+              <select value={blockSel} onChange={(event) => { setBlockSel(event.target.value); setSelectedSchoolId('all'); }}>
+                <option value="">બધા બ્લોક</option>
+                {blockOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              શાળા
+              <select value={selectedSchoolId} onChange={(event) => setSelectedSchoolId(event.target.value)}>
+                <option value="all">બધી શાળાઓ ({scopedSchools.length})</option>
+                {scopedSchools.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}
+              </select>
+            </label>
+          </>
         )}
         <label>
           ધોરણ
@@ -223,11 +255,11 @@ export default function Summary({
 
       {Object.entries(CLASSES).filter(([grade]) => selectedGrade === 'all' || grade === selectedGrade).map(([grade, info]) => {
         const gradeStudents = (students || []).filter((student) =>
-          (selectedSchoolId === 'all' || student.school_id === selectedSchoolId)
+          (inScope(student.school_id))
           && student.dhoran === grade
         );
         const gradeEntries = (entries || []).filter((entry) =>
-          (selectedSchoolId === 'all' || entry.school_id === selectedSchoolId)
+          (inScope(entry.school_id))
           && entry.dhoran === grade
           && entry.month === selectedMonth
         );
@@ -237,7 +269,8 @@ export default function Summary({
           return { student, entry, result: calc(grade, entry?.answers) };
         });
         const done = results.filter((item) => item.entry && item.result.cat).length;
-        const partial = results.filter((item) => item.entry && !item.result.cat).length;
+        const absent = results.filter((item) => item.entry && isAbsent(item.entry.answers)).length;
+        const partial = results.filter((item) => item.entry && !item.result.cat && !isAbsent(item.entry.answers)).length;
         const pending = Math.max(0, gradeStudents.length - gradeEntries.length);
         const gradeSkills = (STATEMENTS[grade] || []).map((statement, index) => {
           const values = results.map((item) => item.entry?.answers?.[statement.n]).filter((value) => value !== undefined);
@@ -252,7 +285,7 @@ export default function Summary({
           };
         });
         const gradeSchoolTotals = isAdmin && selectedSchoolId === 'all'
-          ? allSchools.map((item) => {
+          ? scopedSchools.map((item) => {
             const itemStudents = gradeStudents.filter((student) => student.school_id === item.id);
             const itemStudentIds = new Set(itemStudents.map((student) => student.id));
             const itemEntries = gradeEntries.filter((entry) => itemStudentIds.has(entry.student_id));
@@ -261,10 +294,18 @@ export default function Summary({
               enrolled: itemStudents.length,
               saved: itemEntries.length,
               complete: itemEntries.filter((entry) => calc(grade, entry.answers).cat).length,
+              absent: itemEntries.filter((entry) => isAbsent(entry.answers)).length,
               pending: Math.max(0, itemStudents.length - itemEntries.length),
             };
-          })
+          }).map((row) => ({ ...row, incomplete: row.saved - row.complete - row.absent }))
           : [];
+        const sortedSchoolTotals = [...gradeSchoolTotals].sort((a, b) => {
+          const pick = (row) => (sort.key === 'name' ? row.school.name : sort.key === 'code' ? row.school.code : row[sort.key]);
+          const left = pick(a);
+          const right = pick(b);
+          const order = typeof left === 'number' ? left - right : String(left).localeCompare(String(right));
+          return sort.dir === 'asc' ? order : -order;
+        });
 
         return (
           <section className="summary-grade card" key={grade}>
@@ -282,6 +323,7 @@ export default function Summary({
                   saved={gradeEntries.length}
                   done={done}
                   partial={partial}
+                  absent={absent}
                   pending={pending}
                   tri={{
                     U: results.filter((item) => item.entry && item.result.cat === 'U').length,
@@ -296,6 +338,7 @@ export default function Summary({
                   <div><span>પૂર્ણ એન્ટ્રી</span><b>{done}</b></div>
                   <div><span>અપૂર્ણ એન્ટ્રી</span><b>{partial}</b></div>
                   <div><span>બાકી</span><b>{pending}</b></div>
+                  <div><span>ગેરહાજર</span><b>{absent}</b></div>
                 </div>
 
                 {isAdmin && selectedSchoolId === 'all' && (
@@ -303,12 +346,28 @@ export default function Summary({
                     <h3>શાળા પ્રમાણે સરખામણી</h3>
                     <div className="scroll">
                       <table className="report-table">
-                        <thead><tr><th>શાળા</th><th>કોડ</th><th>નોંધાયેલા</th><th>એન્ટ્રી</th><th>પૂર્ણ</th><th>બાકી</th></tr></thead>
+                        <thead>
+                          <tr>
+                            {[['name', 'શાળા'], ['code', 'કોડ'], ['enrolled', 'નોંધાયેલા'], ['saved', 'એન્ટ્રી'], ['complete', 'પૂર્ણ'], ['incomplete', 'અપૂર્ણ'], ['absent', 'ગેરહાજર'], ['pending', 'બાકી']].map(([key, label]) => (
+                              <th key={key} className="sortable" aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                <button
+                                  type="button"
+                                  className="sort-btn"
+                                  onClick={() => setSort((current) => (current.key === key
+                                    ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+                                    : { key, dir: key === 'name' || key === 'code' ? 'asc' : 'desc' }))}
+                                >
+                                  {label} <span aria-hidden="true">{sort.key === key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                                </button>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
                         <tbody>
-                          {gradeSchoolTotals.map((item) => (
+                          {sortedSchoolTotals.map((item) => (
                             <tr key={item.school.id}>
                               <td className="left">{item.school.name}</td><td>{item.school.code}</td>
-                              <td>{item.enrolled}</td><td>{item.saved}</td><td>{item.complete}</td><td>{item.pending}</td>
+                              <td className={item.enrolled === 0 ? 'zero-cell' : ''}>{item.enrolled}</td><td>{item.saved}</td><td>{item.complete}</td><td>{item.incomplete}</td><td>{item.absent}</td><td>{item.pending}</td>
                             </tr>
                           ))}
                         </tbody>
