@@ -126,3 +126,11 @@ Kaaran: supabase-js `functions.invoke` xlsx response ne text tarike vanche chhe 
 Fix (frontend j; function badalvi nathi): src\lib\invokeBinaryFunction.js (NAVI), SchoolYearReportButton.jsx, AdminReports.jsx (export / pending / incomplete)
 Ledger: "ધોરણની રજિસ્ટર સંખ્યા" ni baju "ગેરહાજર" (darek mahina), ane ધોરણ-vaar table ma "રજિસ્ટર" ni baju "ગેરહાજર" - Admin/District/Block/School potani scope mujab
 Test: tests\invokeBinaryFunction.test.js
+
+## 16. "Failed to fetch" (login / session) - LIVE thata pehla
+Aa code ni bhul nathi: browser Supabase sudhi pahonchi shakto nathi. Pehla aa tapaso:
+1. Browser ma kholo: https://nutnaymoiazrhhwgqlyv.supabase.co/auth/v1/health  -> JSON/401 male to server chalu chhe; "can't be reached"/timeout to project paused ke network problem
+2. Supabase Dashboard -> project nutnaymoiazrhhwgqlyv -> jo "Paused" hoy to "Restore project" (2-5 minute) ; pachhi pharithi login
+3. .env.local: VITE_SUPABASE_URL=https://nutnaymoiazrhhwgqlyv.supabase.co (spelling), VITE_SUPABASE_PUBLISHABLE_KEY (sb_publishable_... / anon key). Badalya pachhi npm run dev restart
+4. VPN / Ad-blocker / antivirus band kari ne try; bija network (mobile hotspot) par try
+Navu: login page par server na pahonch na hoy to lal chetavani + "ફરી તપાસો"; error message saral banyo (src\lib\connection.js)

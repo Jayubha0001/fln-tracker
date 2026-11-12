@@ -107,6 +107,7 @@ const Summary = await load('/src/pages/Summary.jsx');
 const SchoolSummary = await load('/src/pages/SchoolSummary.jsx');
 const Students = await load('/src/pages/Students.jsx');
 const AdminReports = await load('/src/pages/AdminReports.jsx');
+const LoginPage = await load('/src/pages/Login.jsx');
 const SchoolYearReportButton = await load('/src/components/SchoolYearReportButton.jsx');
 
 await mount('AdminDashboard(admin)', AdminDashboard, { supabase, profile: adminProfile });
@@ -115,6 +116,7 @@ await mount('AdminDashboard(block)', AdminDashboard, { supabase, profile: blockP
 await mount('Entry', Entry, { supabase, school: SCHOOLS[0], dhoran: '1', month: '2026-10', onDirtyChange() {} }, [{ test: /વિધાન પ્રમાણે/ }, { test: /વિદ્યાર્થી પ્રમાણે/ }, { test: /ગેરહાજર/, max: 2 }]);
 await mount('Summary(admin)', Summary, { supabase, isAdmin: true, schools: SCHOOLS, scopeLabel: 'x' }, [{ test: /નોંધાયેલા/, max: 2 }]);
 await mount('SchoolSummary', SchoolSummary, { supabase, school: SCHOOLS[0], dhoran: '1', month: '2026-10' });
+await mount('Login page', LoginPage, { supabase, supabaseUrl: 'https://abc.supabase.co' });
 await mount('AdminReports', AdminReports, { supabase, profile: adminProfile });
 await mount('SchoolYearReportButton', SchoolYearReportButton, { supabase, school: SCHOOLS[0] }, [{ test: /વાર્ષિક/ }]);
 await mount('Students', Students, { supabase, school: SCHOOLS[0], dhoran: '1' });

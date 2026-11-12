@@ -1,3 +1,4 @@
+import { friendlyError } from './lib/connection.js';
 import { useEffect, useState } from 'react';
 import { CLASSES, MONTHS, currentMonthKey } from './lib/category';
 import { supabase, supabaseConfigError } from './lib/supabase';
@@ -44,12 +45,12 @@ export default function App() {
     let mounted = true;
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
       if (!mounted) return;
-      if (sessionError) setError(`Session લોડ થઈ નથી: ${sessionError.message}`);
+      if (sessionError) setError(friendlyError('Session લોડ થઈ નથી', sessionError.message));
       setSession(data.session);
       setAuthLoading(false);
     }).catch((cause) => {
       if (!mounted) return;
-      setError(`Session લોડ થઈ નથી: ${cause.message}`);
+      setError(friendlyError('Session લોડ થઈ નથી', cause.message));
       setAuthLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
