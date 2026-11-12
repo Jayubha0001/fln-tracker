@@ -54,3 +54,20 @@ test('builds a month-by-month school matrix with separate grade outcomes and pen
   assert.equal(rows['2'][1].N, 1);
   assert.equal(rows['2'][1].pending, 1);
 });
+
+test('absent students are saved but neither incomplete nor counted in U/P/N; totals reconcile', () => {
+  const students = [
+    { id: 'a1', dhoran: 'B' }, { id: 'a2', dhoran: 'B' }, { id: 'a3', dhoran: 'B' }, { id: 'a4', dhoran: 'B' },
+  ];
+  const entries = [
+    { student_id: 'a1', dhoran: 'B', month: '2026-10', answers: answersFor('B', 5) },
+    { student_id: 'a2', dhoran: 'B', month: '2026-10', answers: { absent: 'yes' } },
+    { student_id: 'a3', dhoran: 'B', month: '2026-10', answers: { 1: true } },
+  ];
+  const october = buildSchoolYearRows(students, entries).B[4];
+  assert.deepEqual(
+    (({ enrolled, saved, complete, incomplete, absent, pending, N }) => ({ enrolled, saved, complete, incomplete, absent, pending, N }))(october),
+    { enrolled: 4, saved: 3, complete: 1, incomplete: 1, absent: 1, pending: 1, N: 1 },
+  );
+  assert.equal(october.enrolled, october.complete + october.incomplete + october.absent + october.pending);
+});

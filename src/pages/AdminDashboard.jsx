@@ -5,8 +5,11 @@ import { loadAllRows } from '../lib/loadAllRows';
 import DashboardOverview from '../components/DashboardOverview.jsx';
 import { isAbsent } from '../lib/absent.js';
 
-const GRADE_TABS = [{ key: '', label: 'બધા ધોરણ' }, ...Object.entries(CLASSES).map(([key, v]) => ({ key, label: v.label }))];
+const GRADE_EN = { B: 'Balvatika', 1: 'Std 1', 2: 'Std 2' };
+const GRADE_TABS = [{ key: '', label: 'બધા ધોરણ / All Classes' }, ...Object.entries(CLASSES).map(([key, v]) => ({ key, label: `${v.label} / ${GRADE_EN[key] || ''}` }))];
 const LEVEL_TITLE = { district: 'જિલ્લો', block: 'તાલુકો', school: 'શાળા' };
+const LEVEL_EN = { district: 'District', block: 'Block', school: 'School' };
+const LEVEL_BI = { district: 'જિલ્લો / District', block: 'તાલુકો / Block', school: 'શાળા / School' };
 const GRADE_KEYS = Object.keys(CLASSES);
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
 const monthLabel = (key) => MONTHS.find((m) => m.key === key)?.label || key;
@@ -14,9 +17,9 @@ const defaultMonth = currentMonthKey();
 
 function TriBar({ u, p, n }) {
   const total = u + p + n;
-  if (!total) return <div className="dash-bar empty" title="હજી એન્ટ્રી નથી" />;
+  if (!total) return <div className="dash-bar empty" title="હજી એન્ટ્રી નથી / No entries yet" />;
   return (
-    <div className="dash-bar" title={`ઉદયમાન ${u} · પ્રગતિશીલ ${p} · નિપુણ ${n}`}>
+    <div className="dash-bar" title={`ઉદયમાન / Udayman ${u} · પ્રગતિશીલ / Pragatishil ${p} · નિપુણ / Nipun ${n}`}>
       <i className="u" style={{ width: `${pct(u, total)}%` }} />
       <i className="p" style={{ width: `${pct(p, total)}%` }} />
       <i className="n" style={{ width: `${pct(n, total)}%` }} />
@@ -299,25 +302,25 @@ export default function AdminDashboard({ supabase, profile }) {
     const wb = XLSX.utils.book_new();
     if (!scope.school) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map((r) => ({
-        [LEVEL_TITLE[level]]: r.group_label, ...(level === 'school' ? { 'શાળા કોડ': r.school_code } : {}),
-        'રજિસ્ટર સંખ્યા': Number(r.registered), 'એન્ટ્રી થયેલ': Number(r.entered),
-        'ઉદયમાન': Number(r.uday), 'પ્રગતિશીલ': Number(r.pragati), 'નિપુણ': Number(r.nipun),
-        'નિપુણ %': pct(Number(r.nipun), Number(r.registered)),
+        [LEVEL_BI[level]]: r.group_label, ...(level === 'school' ? { 'શાળા કોડ / School Code': r.school_code } : {}),
+        'રજિસ્ટર સંખ્યા / Registered': Number(r.registered), 'એન્ટ્રી થયેલ / Entries': Number(r.entered), 'ગેરહાજર / Absent': absentByGroup.get(r.group_key) || 0,
+        'ઉદયમાન / Udayman': Number(r.uday), 'પ્રગતિશીલ / Pragatishil': Number(r.pragati), 'નિપુણ / Nipun': Number(r.nipun),
+        'નિપુણ % / Nipun %': pct(Number(r.nipun), Number(r.registered)),
       }))), 'Group');
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(MONTHS.map((m, i) => {
       const r = ledgerByMonth.get(m.key);
       return {
-        'ક્રમ': i + 1, 'માસ': m.label, 'રજિસ્ટર સંખ્યા': registered, 'એન્ટ્રી થયેલ': Number(r?.entered || 0),
-        'ઉદયમાન': Number(r?.uday || 0), 'પ્રગતિશીલ': Number(r?.pragati || 0), 'નિપુણ': Number(r?.nipun || 0),
-        'FLN સિદ્ધિ %': pct(Number(r?.nipun || 0), registered),
+        'ક્રમ / Sr.': i + 1, 'માસ / Month': m.label, 'રજિસ્ટર સંખ્યા / Registered': registered, 'ગેરહાજર / Absent': absentInfo.byMonth.get(m.key) || 0, 'એન્ટ્રી થયેલ / Entries': Number(r?.entered || 0),
+        'ઉદયમાન / Udayman': Number(r?.uday || 0), 'પ્રગતિશીલ / Pragatishil': Number(r?.pragati || 0), 'નિપુણ / Nipun': Number(r?.nipun || 0),
+        'FLN સિદ્ધિ % / FLN Achievement %': pct(Number(r?.nipun || 0), registered),
       };
     })), 'Ledger');
     XLSX.writeFile(wb, `fln-dashboard-${scope.school?.code || scope.block || scope.district || 'gujarat'}.xlsx`);
   }
 
   const crumbs = [
-    minDepth === 0 && { label: 'ગુજરાત', depth: 0 },
+    minDepth === 0 && { label: 'ગુજરાત / Gujarat', depth: 0 },
     scope.district && { label: scope.district, depth: 1 },
     scope.block && { label: scope.block, depth: 2 },
     scope.school && { label: scope.school.name, depth: 3 },
@@ -327,7 +330,7 @@ export default function AdminDashboard({ supabase, profile }) {
   const canGoBack = Boolean(backCrumb && backCrumb.depth >= minDepth);
   const backButton = canGoBack && (
     <button type="button" className="dash-back" onClick={() => { goto(backCrumb.depth); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-      ← પાછા · {backCrumb.label}
+      ← પાછા / Back · {backCrumb.label}
     </button>
   );
 
@@ -346,21 +349,21 @@ export default function AdminDashboard({ supabase, profile }) {
             ))}
           </nav>
         </div>
-        <div className="dash-gauge" role="img" aria-label={`FLN સિદ્ધિ ${pct(overviewTotals.n, overviewTotals.registered)}%`}>
+        <div className="dash-gauge" role="img" aria-label={`FLN સિદ્ધિ / Achievement ${pct(overviewTotals.n, overviewTotals.registered)}%`}>
           <svg viewBox="0 0 120 78">
             <path d="M10 70 A50 50 0 0 1 110 70" pathLength="100" className="dash-gauge-track" />
             <path d="M10 70 A50 50 0 0 1 110 70" pathLength="100" className="dash-gauge-fill"
               strokeDasharray={`${Math.min(100, pct(overviewTotals.n, overviewTotals.registered))} 100`} />
             <text x="60" y="58" textAnchor="middle" className="dash-gauge-num">{pct(overviewTotals.n, overviewTotals.registered)}%</text>
-            <text x="60" y="73" textAnchor="middle" className="dash-gauge-cap">FLN સિદ્ધિ</text>
+            <text x="60" y="73" textAnchor="middle" className="dash-gauge-cap">FLN સિદ્ધિ / ACHIEVEMENT</text>
           </svg>
-          <span>એન્ટ્રી {pct(overviewTotals.entered, overviewTotals.registered)}% · નિપુણ {overviewTotals.n.toLocaleString()}</span>
+          <span>એન્ટ્રી / Entries {pct(overviewTotals.entered, overviewTotals.registered)}% · નિપુણ / Nipun {overviewTotals.n.toLocaleString()}</span>
         </div>
         <div className="dash-hero-actions">
           <label className="dash-live"><input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Live</label>
           <button type="button" onClick={() => load()} disabled={busy}>↻ Refresh</button>
           <button type="button" onClick={exportExcel} disabled={busy}>⬇ Excel</button>
-          <small>{updatedAt ? `અપડેટ: ${updatedAt.toLocaleTimeString()}` : ''}</small>
+          <small>{updatedAt ? `અપડેટ / Updated: ${updatedAt.toLocaleTimeString()}` : ''}</small>
         </div>
       </div>
 
@@ -370,7 +373,7 @@ export default function AdminDashboard({ supabase, profile }) {
             <button key={g.key || 'all'} type="button" className={grade === g.key ? 'on' : ''} onClick={() => setGrade(g.key)}>{g.label}</button>
           ))}
         </div>
-        <label>માસ
+        <label>માસ / Month
           <select value={month} onChange={(e) => setMonth(e.target.value)}>
             {MONTHS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
           </select>
@@ -381,6 +384,7 @@ export default function AdminDashboard({ supabase, profile }) {
 
       <DashboardOverview
         unitTitle={scope.school ? 'ધોરણ' : LEVEL_TITLE[level]}
+        unitEn={scope.school ? 'Class' : LEVEL_EN[level]}
         monthLabel={monthLabel(month)}
         rows={overviewRows}
         totals={overviewTotals}
@@ -393,37 +397,37 @@ export default function AdminDashboard({ supabase, profile }) {
       {scope.school && (
         <>
           <div className="dash-kpis">
-            <Kpi label="રજિસ્ટર વિદ્યાર્થી" value={studentProgress?.length?.toLocaleString() || '—'} sub={gradeInfo?.label || 'બધાં ધોરણ'} />
+            <Kpi label="રજિસ્ટર વિદ્યાર્થી / Registered Students" value={studentProgress?.length?.toLocaleString() || '—'} sub={gradeInfo?.label || 'બધાં ધોરણ / All Classes'} />
             <Kpi label={`${monthLabel(month)} assessed`} value={studentProgress ? (studentProgress.length - studentProgressCounts.pending).toLocaleString() : '—'} />
-            <Kpi tone="n" label="પૂર્ણ" value={studentProgress ? studentProgressCounts.complete.toLocaleString() : '—'} />
-            <Kpi tone="p" label="અપૂર્ણ" value={studentProgress ? studentProgressCounts.incomplete.toLocaleString() : '—'} />
-            <Kpi tone="u" label="બાકી" value={studentProgress ? studentProgressCounts.pending.toLocaleString() : '—'} />
-            <Kpi label="ગેરહાજર" value={studentProgress ? studentProgressCounts.absent.toLocaleString() : '—'} />
+            <Kpi tone="n" label="પૂર્ણ / Complete" value={studentProgress ? studentProgressCounts.complete.toLocaleString() : '—'} />
+            <Kpi tone="p" label="અપૂર્ણ / Incomplete" value={studentProgress ? studentProgressCounts.incomplete.toLocaleString() : '—'} />
+            <Kpi tone="u" label="બાકી / Pending" value={studentProgress ? studentProgressCounts.pending.toLocaleString() : '—'} />
+            <Kpi label="ગેરહાજર / Absent" value={studentProgress ? studentProgressCounts.absent.toLocaleString() : '—'} />
           </div>
           <div className="card dash-card">
             <div className="row between">
-              <h3>વિદ્યાર્થી પ્રમાણે {monthLabel(month)} assessment · {scope.school.name}</h3>
+              <h3>વિદ્યાર્થી પ્રમાણે {monthLabel(month)} assessment / Student-wise Assessment · {scope.school.name}</h3>
               {backButton}
             </div>
             {studentProgressError && <p className="error" role="alert">{studentProgressError}</p>}
-            {!studentProgress && !studentProgressError && <p className="muted" role="status">વિદ્યાર્થી પ્રગતિ લોડ થાય છે…</p>}
+            {!studentProgress && !studentProgressError && <p className="muted" role="status">વિદ્યાર્થી પ્રગતિ લોડ થાય છે… / Loading student progress…</p>}
             {studentProgress && (
               <div className="scroll dash-scroll">
                 <table className="dash-table">
-                  <thead><tr><th className="left">વિદ્યાર્થી</th><th>ધોરણ</th><th>સ્થિતિ</th><th>જવાબ / જરૂરી</th><th>છેલ્લે સાચવેલ</th></tr></thead>
+                  <thead><tr><th className="left">વિદ્યાર્થી<br />Student</th><th>ધોરણ<br />Class</th><th>સ્થિતિ<br />Status</th><th>જવાબ / જરૂરી<br />Answered / Required</th><th>છેલ્લે સાચવેલ<br />Last Saved</th></tr></thead>
                   <tbody>
                     {studentProgress.map((student) => (
                       <tr key={student.id}>
                         <td className="left">{student.name}</td>
                         <td>{CLASSES[student.dhoran]?.label || student.dhoran}</td>
                         <td className={student.status === 'complete' ? 'cn' : student.status === 'incomplete' ? 'cp' : 'cu'}>
-                          {student.status === 'complete' ? 'પૂર્ણ' : student.status === 'incomplete' ? 'અપૂર્ણ' : student.status === 'absent' ? 'ગેરહાજર' : 'બાકી'}
+                          {student.status === 'complete' ? 'પૂર્ણ / Complete' : student.status === 'incomplete' ? 'અપૂર્ણ / Incomplete' : student.status === 'absent' ? 'ગેરહાજર / Absent' : 'બાકી / Pending'}
                         </td>
-                        <td>{student.entry && student.status !== 'absent' ? `${student.result.done}/${student.result.total} · ${student.result.yes} હા` : '—'}</td>
+                        <td>{student.entry && student.status !== 'absent' ? `${student.result.done}/${student.result.total} · ${student.result.yes} હા / Yes` : '—'}</td>
                         <td>{student.entry?.updated_at ? new Date(student.entry.updated_at).toLocaleString() : '—'}</td>
                       </tr>
                     ))}
-                    {!studentProgress.length && <tr><td colSpan="5" className="muted">આ filter માટે વિદ્યાર્થી મળ્યા નથી.</td></tr>}
+                    {!studentProgress.length && <tr><td colSpan="5" className="muted">આ filter માટે વિદ્યાર્થી મળ્યા નથી / No students found.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -435,12 +439,12 @@ export default function AdminDashboard({ supabase, profile }) {
       {!scope.school && (
         <div className="card dash-card">
           <div className="row between">
-            <h3>{LEVEL_TITLE[level]} પ્રમાણે – {monthLabel(month)} {gradeInfo ? `· ${gradeInfo.label}` : ''}</h3>
+            <h3>{LEVEL_TITLE[level]} પ્રમાણે / by {LEVEL_EN[level]} – {monthLabel(month)} {gradeInfo ? `· ${gradeInfo.label}` : ''}</h3>
             {backButton}
             <div className="dash-table-tools">
-              <input className="dash-search" placeholder={`${LEVEL_TITLE[level]} શોધો…`} value={q} onChange={(e) => setQ(e.target.value)} />
+              <input className="dash-search" placeholder={`${LEVEL_TITLE[level]} શોધો / Search ${LEVEL_EN[level]}…`} value={q} onChange={(e) => setQ(e.target.value)} />
               <label>માસ
-                <select aria-label="માસ" value={month} onChange={(e) => setMonth(e.target.value)}>
+                <select aria-label="માસ / Month" value={month} onChange={(e) => setMonth(e.target.value)}>
                   {MONTHS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
                 </select>
               </label>
@@ -451,10 +455,10 @@ export default function AdminDashboard({ supabase, profile }) {
               <thead>
                 <tr>
                   <th className="left">{LEVEL_TITLE[level]}</th>
-                  {level !== 'school' && <><th>શાળા</th><th>બાકી શાળા</th></>}
-                  <th>રજિસ્ટર</th><th>એન્ટ્રી</th>
-                  <th className="hu">ઉદયમાન</th><th className="hp">પ્રગતિશીલ</th><th className="hn">નિપુણ</th><th>ગેરહાજર</th>
-                  <th className="wide">વિતરણ</th><th>નિપુણ %</th>
+                  {level !== 'school' && <><th>શાળા<br />Schools</th><th>બાકી શાળા<br />Pending Schools</th></>}
+                  <th>રજિસ્ટર<br />Register</th><th>એન્ટ્રી<br />Entries</th>
+                  <th className="hu">ઉદયમાન<br />Udayman</th><th className="hp">પ્રગતિશીલ<br />Pragatishil</th><th className="hn">નિપુણ<br />Nipun</th><th>ગેરહાજર<br />Absent</th>
+                  <th className="wide">વિતરણ<br />Distribution</th><th>નિપુણ %<br />Nipun %</th>
                 </tr>
               </thead>
               <tbody>
@@ -473,11 +477,11 @@ export default function AdminDashboard({ supabase, profile }) {
                     <td><b>{pct(Number(r.nipun), Number(r.registered))}%</b></td>
                   </tr>
                 ))}
-                {!rows.length && !busy && <tr><td colSpan={level === 'school' ? 9 : 11} className="muted">કોઈ ડેટા મળ્યો નથી.</td></tr>}
+                {!rows.length && !busy && <tr><td colSpan={level === 'school' ? 9 : 11} className="muted">કોઈ ડેટા મળ્યો નથી / No data found.</td></tr>}
               </tbody>
               {rows.length > 0 && (
                 <tfoot><tr>
-                  <td className="left">કુલ</td>
+                  <td className="left">કુલ / Total</td>
                   {level !== 'school' && <><td>{schoolStats?.total ?? '—'}</td><td className="cu">{schoolStats?.pending ?? '—'}</td></>}
                   <td>{totals.registered.toLocaleString()}</td><td>{totals.entered.toLocaleString()}</td>
                   <td className="cu">{totals.u}</td><td className="cp">{totals.p}</td><td className="cn">{totals.n}</td><td className="ca">{overviewTotals.absent}</td>
@@ -493,22 +497,22 @@ export default function AdminDashboard({ supabase, profile }) {
       {/* PDF jevu Leader / Ledger */}
       <div className="card dash-ledger">
         <div className="dash-ledger-head">
-          <b>ગણિત ટ્રેકર (લેજર)</b>
-          <span>{gradeInfo ? `${gradeInfo.label} માટે` : 'બાલવાટિકા થી ધોરણ 2 માટે'}</span>
+          <b>ગણિત ટ્રેકર (લેજર) / Maths Tracker (Ledger)</b>
+          <span>{gradeInfo ? `${gradeInfo.label} માટે / for` : 'બાલવાટિકા થી ધોરણ 2 માટે / For Balvatika to Std 2'}</span>
           <small>{scope.school ? `${scope.school.name} · ${scope.school.code}` : crumbs.map((c) => c.label).join(' › ')}</small>
         </div>
         <div className="scroll">
           <table className="dash-ledger-table">
             <thead>
               <tr>
-                <th rowSpan="2">ક્રમ</th><th rowSpan="2">માસનું નામ</th><th rowSpan="2">ધોરણની રજિસ્ટર સંખ્યા</th><th rowSpan="2">ગેરહાજર</th>
+                <th rowSpan="2">ક્રમ<br />Sr.</th><th rowSpan="2">માસનું નામ<br />Month</th><th rowSpan="2">ધોરણની રજિસ્ટર સંખ્યા<br />Class Register Count</th><th rowSpan="2">ગેરહાજર<br />Absent</th>
                 <th colSpan="3" className="span">FOUNDATIONAL LITERACY AND NUMERACY – FLN ના વિદ્યાર્થીઓની સંખ્યા</th>
-                <th rowSpan="2">FLN માં સિદ્ધિ મેળવેલ વિદ્યાર્થીઓની ટકાવારી</th>
+                <th rowSpan="2">FLN માં સિદ્ધિ મેળવેલ વિદ્યાર્થીઓની ટકાવારી<br />% of Students Achieving FLN</th>
               </tr>
               <tr>
-                <th className="hu">ઉદયમાન<br /><small>0 થી 30 %</small></th>
-                <th className="hp">પ્રગતિશીલ<br /><small>31 થી 79 %</small></th>
-                <th className="hn">નિપુણ<br /><small>80 % કે તેથી વધુ</small></th>
+                <th className="hu">ઉદયમાન / Udayman<br /><small>0 થી 30 % / 0 to 30 %</small></th>
+                <th className="hp">પ્રગતિશીલ / Pragatishil<br /><small>31 થી 79 % / 31 to 79 %</small></th>
+                <th className="hn">નિપુણ / Nipun<br /><small>80 % કે તેથી વધુ / 80 % or more</small></th>
               </tr>
             </thead>
             <tbody>
@@ -528,15 +532,15 @@ export default function AdminDashboard({ supabase, profile }) {
             </tbody>
           </table>
         </div>
-        <h4>સિદ્ધ કરેલ વિધાનોની સંખ્યા પ્રમાણે રિપોર્ટ – {monthLabel(month)}</h4>
+        <h4>સિદ્ધ કરેલ વિધાનોની સંખ્યા પ્રમાણે રિપોર્ટ / Report by Statements Achieved – {monthLabel(month)}</h4>
         <div className="scroll">
           <table className="dash-rules">
             <thead>
               <tr>
-                <th rowSpan="2">ધોરણ</th><th rowSpan="2">કુલ વિધાન</th><th rowSpan="2">રજિસ્ટર</th><th rowSpan="2">ગેરહાજર</th><th rowSpan="2">એન્ટ્રી</th>
-                <th colSpan="3" className="span">સિદ્ધ કરેલ વિધાનોની સંખ્યા → વિદ્યાર્થીઓ</th>
+                <th rowSpan="2">ધોરણ<br />Class</th><th rowSpan="2">કુલ વિધાન<br />Total Statements</th><th rowSpan="2">રજિસ્ટર<br />Register</th><th rowSpan="2">ગેરહાજર<br />Absent</th><th rowSpan="2">એન્ટ્રી<br />Entries</th>
+                <th colSpan="3" className="span">સિદ્ધ કરેલ વિધાનોની સંખ્યા → વિદ્યાર્થીઓ / Statements Achieved → Students</th>
               </tr>
-              <tr><th className="hu">ઉદયમાન</th><th className="hp">પ્રગતિશીલ</th><th className="hn">નિપુણ</th></tr>
+              <tr><th className="hu">ઉદયમાન<br />Udayman</th><th className="hp">પ્રગતિશીલ<br />Pragatishil</th><th className="hn">નિપુણ<br />Nipun</th></tr>
             </thead>
             <tbody>
               {GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => {
@@ -546,16 +550,16 @@ export default function AdminDashboard({ supabase, profile }) {
                   <tr key={k}>
                     <td className="left"><b>{c.label}</b></td><td>{c.total}</td><td>{r.registered}</td><td className="ca">{absentInfo.byGrade.get(k) || 0}</td>
                     <td>{r.entered} <small>({pct(r.entered, r.registered)}%)</small></td>
-                    <td className="rb u"><small>{c.udayMax} કે તેથી ઓછા</small><b>{r.u}</b></td>
-                    <td className="rb p"><small>{c.udayMax + 1} થી {c.nipunMin - 1}</small><b>{r.p}</b></td>
-                    <td className="rb n"><small>{c.nipunMin} કે તેથી વધુ</small><b>{r.n}</b></td>
+                    <td className="rb u"><small>{c.udayMax} કે તેથી ઓછા / or less</small><b>{r.u}</b></td>
+                    <td className="rb p"><small>{c.udayMax + 1} થી / to {c.nipunMin - 1}</small><b>{r.p}</b></td>
+                    <td className="rb n"><small>{c.nipunMin} કે તેથી વધુ / or more</small><b>{r.n}</b></td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <p className="muted">નિપુણ % = નિપુણ વિદ્યાર્થી ÷ રજિસ્ટર સંખ્યા. બધાં વિધાનોમાં હા/ના ભરેલી એન્ટ્રી જ ઉદયમાન/પ્રગતિશીલ/નિપુણમાં ગણાય છે.</p>
+        <p className="muted">નિપુણ % = નિપુણ વિદ્યાર્થી ÷ રજિસ્ટર સંખ્યા. બધાં વિધાનોમાં હા/ના ભરેલી એન્ટ્રી જ ઉદયમાન/પ્રગતિશીલ/નિપુણમાં ગણાય છે. / Nipun % = Nipun students ÷ registered students. Only entries with Yes/No for every statement count in Udayman / Pragatishil / Nipun.</p>
       </div>
     </section>
   );

@@ -10,6 +10,7 @@ import {
 } from '../_shared/reportMetrics.js';
 import { GRADE_RULES } from '../_shared/assessmentRules.js';
 import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
+import { buildSchoolYearWorkbook, schoolYearPlainTables } from '../_shared/schoolYearWorkbook.js';
 import { canAccessSchoolReport, reportScope } from '../_shared/reportAuthorization.js';
 
 const corsHeaders = {
@@ -328,61 +329,24 @@ async function buildSchoolYearReport(client: ReturnType<typeof createClient>, sc
 }
 
 function schoolYearWorkbook(report: NonNullable<Awaited<ReturnType<typeof buildSchoolYearReport>>>) {
+  // Fallback (plain, but bilingual Gujarati / English headers) - styled version below is tried first.
   const workbook = XLSX.utils.book_new();
-  const { school, gradeRows } = report;
-  const actionPlanRows = SCHOOL_YEAR_MONTHS.map((month, index) => {
-    const row: Record<string, string | number> = {
-      'માસ': month.label,
-      'શાળા કોડ': school.code,
-      'શાળાનું નામ': school.name,
-    };
-    for (const grade of GRADES) {
-      const result = gradeRows[grade][index];
-      row[`${GRADE_RULES[grade].label} – નોંધાયેલા`] = result.enrolled;
-      row[`${GRADE_RULES[grade].label} – સાચવેલી`] = result.saved;
-      for (const category of ['U', 'P', 'N'] as const) {
-        const column = `${GRADE_RULES[grade].label} – ${category === 'U' ? 'ઉદયમાન' : category === 'P' ? 'પ્રગતિશીલ' : 'નિપુણ'}`;
-        row[`${column} (ગણતરી)`] = result[category];
-        row[`${column} (%)`] = result.enrolled
-          ? `${Math.round(result[category] * 1000 / result.enrolled) / 10}%`
-          : '—';
-      }
-    }
-    return row;
-  });
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(actionPlanRows), 'FLN Action Plan');
-
-  for (const grade of GRADES) {
-    const threshold = GRADE_RULES[grade];
-    const rows = gradeRows[grade].map((month) => ({
-      'માસ': month.label,
-      'ધોરણ': threshold.label,
-      'નોંધાયેલા વિદ્યાર્થીઓ': month.enrolled,
-      'સાચવેલી એન્ટ્રી': month.saved,
-      'પૂર્ણ મૂલ્યાંકન': month.complete,
-      'અપૂર્ણ એન્ટ્રી': month.incomplete,
-      'બાકી': month.pending,
-      [`ઉદયમાન (0 થી ${threshold.udayMax}) – સંખ્યા`]: month.U,
-      'ઉદયમાન (%)': month.enrolled ? `${Math.round(month.U * 1000 / month.enrolled) / 10}%` : '—',
-      'પ્રગતિશીલ – સંખ્યા': month.P,
-      'પ્રગતિશીલ (%)': month.enrolled ? `${Math.round(month.P * 1000 / month.enrolled) / 10}%` : '—',
-      [`નિપુણ (${threshold.nipunMin} થી ${threshold.statementIds.length}) – સંખ્યા`]: month.N,
-      'નિપુણ (%)': month.enrolled ? `${Math.round(month.N * 1000 / month.enrolled) / 10}%` : '—',
-    }));
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), `ધોરણ ${grade}`);
+  for (const table of schoolYearPlainTables(report)) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(table.rows), table.name);
   }
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
-    { 'માહિતી': 'શાળા', 'વિગત': `${school.name} (${school.code})` },
-    { 'માહિતી': 'જિલ્લો / તાલુકો', 'વિગત': `${school.district} / ${school.block}` },
-    { 'માહિતી': 'અપૂર્ણ એન્ટ્રી', 'વિગત': 'બધા learning outcomesના હા/ના જવાબ ન હોય તેવી entry.' },
-    { 'માહિતી': 'શ્રેણી ટકાવારીનો આધાર', 'વિગત': 'દરેક ધોરણના નોંધાયેલા વિદ્યાર્થીઓ; અધૂરા અને બાકી વિદ્યાર્થીઓ category countમાં આવતા નથી.' },
-    ...GRADES.map((grade) => ({
-      'માહિતી': GRADE_RULES[grade].label,
-      'વિગત': `કુલ ${GRADE_RULES[grade].statementIds.length}; ઉદયમાન 0–${GRADE_RULES[grade].udayMax}; પ્રગતિશીલ ${GRADE_RULES[grade].udayMax + 1}–${GRADE_RULES[grade].nipunMin - 1}; નિપુણ ${GRADE_RULES[grade].nipunMin}–${GRADE_RULES[grade].statementIds.length}.`,
-    })),
-  ]), 'માપદંડ');
-
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
+}
+
+async function schoolYearWorkbookBytes(report: NonNullable<Awaited<ReturnType<typeof buildSchoolYearReport>>>) {
+  try {
+    // Dynamic import: ExcelJS ma kai gadbad hoy to baki badha reports ne asar na thay.
+    const { default: ExcelJS } = await import('npm:exceljs@4.4.0');
+    const workbook = buildSchoolYearWorkbook(ExcelJS, report, { generatedAt: new Date() });
+    return new Uint8Array(await workbook.xlsx.writeBuffer());
+  } catch (cause) {
+    console.error('Styled school-year report failed; sending plain bilingual workbook:', cause instanceof Error ? cause.message : cause);
+    return schoolYearWorkbook(report);
+  }
 }
 
 function appendWorkbookTable(
@@ -595,7 +559,7 @@ Deno.serve(async (request) => {
       }
       const schoolReport = await buildSchoolYearReport(userClient, body.schoolId, scope);
       if (!schoolReport) return jsonResponse(404, { error: 'આ accountને આ શાળાનો report જોવાની પરવાનગી નથી અથવા શાળા મળી નથી.' });
-      return new Response(schoolYearWorkbook(schoolReport), {
+      return new Response(await schoolYearWorkbookBytes(schoolReport), {
         headers: {
           ...corsHeaders,
           'Cache-Control': 'no-store',

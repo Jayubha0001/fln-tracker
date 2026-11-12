@@ -223,6 +223,7 @@ function SchoolTracker({ supabase, school, onSignOut }) {
       onLogout={() => leaveEntry(onSignOut)}
       context={`${school.district} › ${school.block} › ${school.name} · ${school.code}`}
     >
+        {['students', 'entry', 'summary'].includes(tab) && (
         <div className="card row manager-selectors">
           <div className="chips">
             {Object.entries(CLASSES).map(([key, item]) => (
@@ -235,6 +236,7 @@ function SchoolTracker({ supabase, school, onSignOut }) {
             </select>
           </label>
         </div>
+        )}
         {tab === 'dashboard' && <AdminDashboard supabase={supabase} profile={{
           role: 'school',
           school_id: school.id,

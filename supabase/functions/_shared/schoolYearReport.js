@@ -29,7 +29,7 @@ export function buildSchoolYearRows(students, entries) {
   return Object.fromEntries(GRADES.map((grade) => {
     const enrolledStudents = students.filter((student) => student.dhoran === grade);
     const months = SCHOOL_YEAR_MONTHS.map((month) => {
-      const counts = { enrolled: enrolledStudents.length, saved: 0, complete: 0, incomplete: 0, pending: 0, U: 0, P: 0, N: 0 };
+      const counts = { enrolled: enrolledStudents.length, saved: 0, complete: 0, incomplete: 0, absent: 0, pending: 0, U: 0, P: 0, N: 0 };
       for (const student of enrolledStudents) {
         const entry = entryByKey.get(`${month.key}:${grade}:${student.id}`);
         if (!entry) {
@@ -37,6 +37,11 @@ export function buildSchoolYearRows(students, entries) {
           continue;
         }
         counts.saved += 1;
+        // Gerhajar: vidyarthi shala ma chhe pan exam ma nathi; entry saved ganay, pan incomplete nahi.
+        if (entry.answers?.absent === 'yes') {
+          counts.absent += 1;
+          continue;
+        }
         const result = classifyAnswers(grade, entry.answers);
         if (!result.complete) {
           counts.incomplete += 1;

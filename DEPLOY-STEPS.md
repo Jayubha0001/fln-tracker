@@ -134,3 +134,46 @@ Aa code ni bhul nathi: browser Supabase sudhi pahonchi shakto nathi. Pehla aa ta
 3. .env.local: VITE_SUPABASE_URL=https://nutnaymoiazrhhwgqlyv.supabase.co (spelling), VITE_SUPABASE_PUBLISHABLE_KEY (sb_publishable_... / anon key). Badalya pachhi npm run dev restart
 4. VPN / Ad-blocker / antivirus band kari ne try; bija network (mobile hotspot) par try
 Navu: login page par server na pahonch na hoy to lal chetavani + "ફરી તપાસો"; error message saral banyo (src\lib\connection.js)
+
+## 17. વાર્ષિક શાળા FLN Report: navo bilingual (ગુજરાતી + English) report-style Excel
+Files: supabase\functions\_shared\schoolYearReport.js (ગેરહાજર count), _shared\schoolYearWorkbook.js (NAVI), admin-reports\index.ts,
+       tests\schoolYearReport.test.js, tests\schoolYearWorkbook.test.js (NAVI)
+Sheets: સારાંશ - Summary | બાલવાટિકા - Balvatika | ધોરણ 1 - Std 1 | ધોરણ 2 - Std 2 | FLN Action Plan | માપદંડ - Criteria
+- Title band, shala vigat, tajeti sthiti + total, masvar Nipun % (colour scale), darek header Gujarati + English, A4 landscape print-ready (page no., fit-to-width)
+- "ગેરહાજર / Absent" column; nondhayela = purn + apurn + gerhajar + baki
+- ExcelJS (npm:exceljs@4.4.0) dynamic import; kai gadbad thay to automatic plain bilingual workbook fallback (baki reports ne asar nahi)
+DEPLOY (frontend badalvu nathi; fakt function):
+npx supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv --use-api
+Pachhi District/Block/School login thi "વાર્ષિક શાળા FLN Report" download karine check karo. Sample: sample-annual-school-report.xlsx / .pdf
+
+## 18. Dashboard bilingual (ગુજરાતી + English) + school login ma repeat selector remove
+Files: src\pages\AdminDashboard.jsx, src\components\DashboardOverview.jsx, src\App.jsx
+- Dashboard (Admin/District/Block/School): badha KPI, cards, table headers, ledger, Excel export headers = ગુજરાતી / English
+- School login: "ધોરણ + માસ" selector bar have fakt Students / Entry / Summary tab ma (Dashboard, Reports, Annual report ma repeat nahi)
+
+## FINAL DEPLOY CHECKLIST (badhu ek sathe) - PowerShell, project folder ma
+cd "D:\Nipun Gujarat Project\fln-tracker"
+# 1) Files copy karo (ZIP mathi), pachhi local check
+npm ci            # EPERM aave to: taskkill /F /IM node.exe ; Remove-Item -Recurse -Force node_modules ; npm ci
+npm run build ; npm run lint ; npm test
+# 2) Supabase (project Active/Healthy hovo joiye)
+npx supabase login
+npx supabase link --project-ref nutnaymoiazrhhwgqlyv
+npx supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv --use-api                 # NAVU: bilingual annual report
+npx supabase functions deploy admin-scoped-account-management --project-ref nutnaymoiazrhhwgqlyv --use-api
+npx supabase functions deploy admin-school-password-reset --project-ref nutnaymoiazrhhwgqlyv --use-api
+npx supabase functions deploy admin-import-schools --project-ref nutnaymoiazrhhwgqlyv --use-api
+npx supabase functions deploy scoped-school-management --project-ref nutnaymoiazrhhwgqlyv --use-api
+npx supabase functions deploy create-school-account --project-ref nutnaymoiazrhhwgqlyv --use-api
+npx supabase functions deploy create-scoped-account --project-ref nutnaymoiazrhhwgqlyv --use-api
+npx supabase secrets set ADMIN_TEMPORARY_PASSWORD="Admin@987" --project-ref nutnaymoiazrhhwgqlyv
+npx supabase functions list --project-ref nutnaymoiazrhhwgqlyv
+# 3) Vercel
+npx vercel deploy            # preview URL -> neeche no checklist test karo
+npx vercel --prod            # preview barabar hoy to j
+# 4) Test checklist (preview par)
+[ ] Admin: Dashboard bilingual; Entry ma ગેરહાજર; Summary filters; School/Student Mgmt tapas; Login & Password list
+[ ] District/Block: potano j data; Missing Login; School add/remove; Annual report download (Excel khule)
+[ ] School login: Dashboard ma selector bar repeat nathi; Annual report download
+[ ] Real password reset na karo (test account j)
+# 5) Haju baki (approval vagar nahi): migration 202610150003 (District/Block account list), commit/push

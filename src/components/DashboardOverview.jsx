@@ -39,16 +39,16 @@ function Donut({ totals }) {
   const radius = 62;
   const circumference = 2 * Math.PI * radius;
   const parts = [
-    { key: 'u', value: totals.u, label: 'ઉદયમાન' },
-    { key: 'p', value: totals.p, label: 'પ્રગતિશીલ' },
-    { key: 'n', value: totals.n, label: 'નિપુણ' },
-    { key: 'a', value: totals.absent || 0, label: 'ગેરહાજર' },
-    { key: 'i', value: incomplete, label: 'અપૂર્ણ' },
+    { key: 'u', value: totals.u, label: 'ઉદયમાન / Udayman' },
+    { key: 'p', value: totals.p, label: 'પ્રગતિશીલ / Pragatishil' },
+    { key: 'n', value: totals.n, label: 'નિપુણ / Nipun' },
+    { key: 'a', value: totals.absent || 0, label: 'ગેરહાજર / Absent' },
+    { key: 'i', value: incomplete, label: 'અપૂર્ણ / Incomplete' },
   ].filter((part) => ['u', 'p', 'n'].includes(part.key) || part.value > 0);
   let offset = 0;
   return (
     <div className="ov-donut-wrap">
-      <svg viewBox="0 0 160 160" className="ov-donut" role="img" aria-label="FLN પ્રગતિ સ્થિતિ">
+      <svg viewBox="0 0 160 160" className="ov-donut" role="img" aria-label="FLN પ્રગતિ સ્થિતિ / FLN Progress Status">
         <circle cx="80" cy="80" r={radius} className="ov-donut-track" />
         {totals.entered > 0 && parts.map((part) => {
           const length = (part.value / totals.entered) * circumference;
@@ -66,7 +66,7 @@ function Donut({ totals }) {
           return circle;
         })}
         <text x="80" y="76" textAnchor="middle" className="ov-donut-num">{fmt(totals.registered)}</text>
-        <text x="80" y="96" textAnchor="middle" className="ov-donut-cap">વિદ્યાર્થીઓ</text>
+        <text x="80" y="96" textAnchor="middle" className="ov-donut-cap">વિદ્યાર્થીઓ / Students</text>
       </svg>
       <ul className="ov-legend">
         {parts.map((part) => (
@@ -76,7 +76,7 @@ function Donut({ totals }) {
             <b>{fmt(part.value)} <small>({pct(part.value, totals.entered)}%)</small></b>
           </li>
         ))}
-        {!totals.entered && <li className="ov-empty">હજી એન્ટ્રી નથી</li>}
+        {!totals.entered && <li className="ov-empty">હજી એન્ટ્રી નથી / No entries yet</li>}
       </ul>
     </div>
   );
@@ -120,7 +120,7 @@ function BarChart({ rows }) {
         const center = left + slot * index + slot / 2;
         return (
           <g key={row.key}>
-            <title>{`${row.label}: રજિસ્ટર ${fmt(row.registered)} · એન્ટ્રી ${fmt(row.entered)}`}</title>
+            <title>{`${row.label}: રજિસ્ટર / Register ${fmt(row.registered)} · એન્ટ્રી / Entries ${fmt(row.entered)}`}</title>
             <rect x={center - barWidth - 1} y={y(row.registered)} width={barWidth} height={Math.max(0, top + plotHeight - y(row.registered))} rx="4" className="ov-bar reg" />
             <rect x={center + 1} y={y(row.entered)} width={barWidth} height={Math.max(0, top + plotHeight - y(row.entered))} rx="4" className="ov-bar ent" />
             <text x={center} y={height - 8} textAnchor="middle" className="ov-axis label">{short(row.label)}</text>
@@ -160,7 +160,7 @@ function TrendChart({ trend }) {
       <path d={line('nipunPct')} className="ov-line nip" />
       {trend.map((item, index) => (
         <g key={item.key}>
-          <title>{`${item.label}: એન્ટ્રી ${item.entryPct}% · નિપુણ ${item.nipunPct}%`}</title>
+          <title>{`${item.label}: એન્ટ્રી / Entry ${item.entryPct}% · નિપુણ / Nipun ${item.nipunPct}%`}</title>
           {item.has && <circle cx={x(index)} cy={y(item.nipunPct)} r="3" className="ov-dot nip" />}
           <text x={x(index)} y={height - 8} textAnchor="middle" className="ov-axis label">{short(item.label, 4)}</text>
         </g>
@@ -169,7 +169,7 @@ function TrendChart({ trend }) {
   );
 }
 
-export default function DashboardOverview({ unitTitle, monthLabel, rows, totals, trend = [], gradeCards = [], schoolStats = null, onSelect }) {
+export default function DashboardOverview({ unitTitle, unitEn = '', monthLabel, rows, totals, trend = [], gradeCards = [], schoolStats = null, onSelect }) {
   const [pendingSearch, setPendingSearch] = useState('');
   const pending = Math.max(0, totals.registered - totals.entered);
   const attention = [...rows]
@@ -187,17 +187,17 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
   return (
     <div className="ov">
       <div className="ov-kpis">
-        <OverviewKpi tone="blue" icon="people" label="રજિસ્ટર સંખ્યા" value={fmt(totals.registered)} sub={`${rows.length} ${unitTitle}`} />
-        <OverviewKpi tone="green" icon="bars" label={`${monthLabel} એન્ટ્રી`} value={fmt(totals.entered)} sub={`${pct(totals.entered, totals.registered)}% · ગેરહાજર સહિત`} />
-        <OverviewKpi tone="amber" icon="doc" label="ઉદયમાન" value={fmt(totals.u)} sub={`${pct(totals.u, totals.entered)}%`} />
-        <OverviewKpi tone="pink" icon="trend" label="પ્રગતિશીલ" value={fmt(totals.p)} sub={`${pct(totals.p, totals.entered)}%`} />
-        <OverviewKpi tone="violet" icon="trophy" label="નિપુણ" value={fmt(totals.n)} sub={`${pct(totals.n, totals.entered)}%`} />
-        <OverviewKpi tone="teal" icon="people" label="ગેરહાજર" value={fmt(totals.absent || 0)} sub={`${pct(totals.absent || 0, totals.registered)}% · એન્ટ્રી માં ગણાય`} />
-        <OverviewKpi tone="slate" icon="clock" label="બાકી એન્ટ્રી" value={fmt(pending)} sub={`${pct(pending, totals.registered)}% બાકી`} />
+        <OverviewKpi tone="blue" icon="people" label="રજિસ્ટર સંખ્યા / Registered" value={fmt(totals.registered)} sub={`${rows.length} ${unitTitle}${unitEn ? ` / ${unitEn}` : ""}`} />
+        <OverviewKpi tone="green" icon="bars" label={`${monthLabel} એન્ટ્રી / Entries`} value={fmt(totals.entered)} sub={`${pct(totals.entered, totals.registered)}% · ગેરહાજર સહિત / incl. Absent`} />
+        <OverviewKpi tone="amber" icon="doc" label="ઉદયમાન / Udayman" value={fmt(totals.u)} sub={`${pct(totals.u, totals.entered)}%`} />
+        <OverviewKpi tone="pink" icon="trend" label="પ્રગતિશીલ / Pragatishil" value={fmt(totals.p)} sub={`${pct(totals.p, totals.entered)}%`} />
+        <OverviewKpi tone="violet" icon="trophy" label="નિપુણ / Nipun" value={fmt(totals.n)} sub={`${pct(totals.n, totals.entered)}%`} />
+        <OverviewKpi tone="teal" icon="people" label="ગેરહાજર / Absent" value={fmt(totals.absent || 0)} sub={`${pct(totals.absent || 0, totals.registered)}% · એન્ટ્રી માં ગણાય / in entries`} />
+        <OverviewKpi tone="slate" icon="clock" label="બાકી એન્ટ્રી / Pending Entries" value={fmt(pending)} sub={`${pct(pending, totals.registered)}% બાકી / pending`} />
       </div>
       {attention.length > 0 && totals.registered > 0 && (
         <div className="ov-attention">
-          <b>ધ્યાન આપો · ઓછી એન્ટ્રી</b>
+          <b>ધ્યાન આપો · ઓછી એન્ટ્રી / Needs Attention · Low Entry</b>
           {attention.map((row) => (
             <button type="button" key={row.key} disabled={!onSelect} onClick={() => onSelect?.(row)} title={`${row.label}: ${row.entered}/${row.registered}`}>
               {short(row.label, 14)} <em>{row.entryPct}%</em>
@@ -208,18 +208,18 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
       {schoolStats && (
         <section className="ov-schools">
           <div className="ov-schools-head">
-            <b>શાળા સ્થિતિ · {monthLabel}</b>
-            <small>{schoolStats.eligible} શાળામાં વિદ્યાર્થી રજિસ્ટર છે{schoolStats.noStudents ? ` · ${schoolStats.noStudents} શાળામાં વિદ્યાર્થી નથી` : ''}</small>
+            <b>શાળા સ્થિતિ / School Status · {monthLabel}</b>
+            <small>{schoolStats.eligible} શાળામાં વિદ્યાર્થી રજિસ્ટર છે / schools with students{schoolStats.noStudents ? ` · ${schoolStats.noStudents} શાળામાં વિદ્યાર્થી નથી / with none` : ''}</small>
           </div>
           <div className="ov-kpis">
-            <OverviewKpi tone="blue" icon="school" label="કુલ શાળા" value={fmt(schoolStats.total)} sub={`${fmt(schoolStats.eligible)} સક્રિય`} />
-            <OverviewKpi tone="green" icon="bars" label="એન્ટ્રી શરૂ" value={fmt(schoolStats.started)} sub={`${pct(schoolStats.started, schoolStats.eligible)}% શાળા`} />
-            <OverviewKpi tone="violet" icon="trophy" label="પૂર્ણ શાળા" value={fmt(schoolStats.complete)} sub={`${pct(schoolStats.complete, schoolStats.eligible)}%`} />
-            <OverviewKpi tone="amber" icon="doc" label="અધૂરી શાળા" value={fmt(schoolStats.partial)} sub={`${pct(schoolStats.partial, schoolStats.eligible)}%`} />
-            <OverviewKpi tone="pink" icon="clock" label="બાકી શાળા" value={fmt(schoolStats.pending)} sub={`${pct(schoolStats.pending, schoolStats.eligible)}% એન્ટ્રી નથી`} />
+            <OverviewKpi tone="blue" icon="school" label="કુલ શાળા / Total Schools" value={fmt(schoolStats.total)} sub={`${fmt(schoolStats.eligible)} સક્રિય / active`} />
+            <OverviewKpi tone="green" icon="bars" label="એન્ટ્રી શરૂ / Entry Started" value={fmt(schoolStats.started)} sub={`${pct(schoolStats.started, schoolStats.eligible)}% શાળા / schools`} />
+            <OverviewKpi tone="violet" icon="trophy" label="પૂર્ણ શાળા / Completed" value={fmt(schoolStats.complete)} sub={`${pct(schoolStats.complete, schoolStats.eligible)}%`} />
+            <OverviewKpi tone="amber" icon="doc" label="અધૂરી શાળા / Partial" value={fmt(schoolStats.partial)} sub={`${pct(schoolStats.partial, schoolStats.eligible)}%`} />
+            <OverviewKpi tone="pink" icon="clock" label="બાકી શાળા / Pending" value={fmt(schoolStats.pending)} sub={`${pct(schoolStats.pending, schoolStats.eligible)}% એન્ટ્રી નથી / no entry`} />
           </div>
           {schoolStats.eligible > 0 && (
-            <div className="ov-stack" role="img" aria-label="શાળા એન્ટ્રી સ્થિતિ">
+            <div className="ov-stack" role="img" aria-label="શાળા એન્ટ્રી સ્થિતિ / School entry status">
               <i className="done" style={{ width: `${pct(schoolStats.complete, schoolStats.eligible)}%` }} />
               <i className="part" style={{ width: `${pct(schoolStats.partial, schoolStats.eligible)}%` }} />
               <i className="todo" style={{ width: `${pct(schoolStats.pending, schoolStats.eligible)}%` }} />
@@ -229,12 +229,12 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
             <details className="tool ov-pending">
               <summary>
                 <span className="tool-ico" aria-hidden="true">!</span>
-                <b>બાકી શાળાઓની યાદી ({fmt(schoolStats.pendingList.length)})</b>
-                <small>જેમાં {monthLabel} ની એક પણ એન્ટ્રી નથી</small>
+                <b>બાકી શાળાઓની યાદી / Pending Schools ({fmt(schoolStats.pendingList.length)})</b>
+                <small>જેમાં {monthLabel} ની એક પણ એન્ટ્રી નથી / no entry in {monthLabel}</small>
                 <i className="tool-chev" aria-hidden="true">⌄</i>
               </summary>
               <div className="tool-body">
-                <input type="search" placeholder="શાળા / કોડ / બ્લોક શોધો…" value={pendingSearch} onChange={(event) => setPendingSearch(event.target.value)} />
+                <input type="search" placeholder="શાળા / કોડ / બ્લોક શોધો… / Search school, code, block" value={pendingSearch} onChange={(event) => setPendingSearch(event.target.value)} />
                 {(() => {
                   const needle = pendingSearch.trim().toLowerCase();
                   const matches = schoolStats.pendingList.filter((item) => !needle
@@ -244,12 +244,12 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
                       <ul className="list ov-pending-list">
                         {matches.slice(0, 100).map((item) => (
                           <li key={item.id || item.code}>
-                            <span><b>{item.name}</b> <small>({item.code})</small><br /><small className="muted">{item.district} › {item.block} · રજિસ્ટર {fmt(item.registered)}</small></span>
+                            <span><b>{item.name}</b> <small>({item.code})</small><br /><small className="muted">{item.district} › {item.block} · રજિસ્ટર / Registered {fmt(item.registered)}</small></span>
                           </li>
                         ))}
-                        {!matches.length && <li className="muted">કોઈ શાળા મળી નથી.</li>}
+                        {!matches.length && <li className="muted">કોઈ શાળા મળી નથી / No school found.</li>}
                       </ul>
-                      {matches.length > 100 && <small className="muted">પહેલી 100 બતાવી છે ({fmt(matches.length)} માંથી); શોધ વધુ ચોક્કસ કરો.</small>}
+                      {matches.length > 100 && <small className="muted">પહેલી 100 બતાવી છે ({fmt(matches.length)} માંથી) / First 100 shown; refine search.</small>}
                     </>
                   );
                 })()}
@@ -261,27 +261,27 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
       {gradeCards.length > 0 && (
         <div className="ov-grades">
           {gradeCards.map((card) => (
-            <div key={card.key} className="ov-grade" title={`ઉદયમાન ${card.u} · પ્રગતિશીલ ${card.p} · નિપુણ ${card.n}`}>
-              <div className="ov-grade-head"><b>{card.label}</b><span>નિપુણ {pct(card.n, card.registered)}%</span></div>
+            <div key={card.key} className="ov-grade" title={`ઉદયમાન / Udayman ${card.u} · પ્રગતિશીલ / Pragatishil ${card.p} · નિપુણ / Nipun ${card.n}`}>
+              <div className="ov-grade-head"><b>{card.label}</b><span>નિપુણ / Nipun {pct(card.n, card.registered)}%</span></div>
               <div className="ov-grade-track"><i style={{ width: `${Math.min(100, pct(card.entered, card.registered))}%` }} /></div>
-              <small>એન્ટ્રી {fmt(card.entered)} / {fmt(card.registered)} · ગેરહાજર {fmt(card.absent || 0)} · બાકી {fmt(Math.max(0, card.registered - card.entered))}</small>
+              <small>એન્ટ્રી / Entries {fmt(card.entered)} / {fmt(card.registered)} · ગેરહાજર / Absent {fmt(card.absent || 0)} · બાકી / Pending {fmt(Math.max(0, card.registered - card.entered))}</small>
             </div>
           ))}
         </div>
       )}
       <div className="ov-grid4">
         <section className="ov-card">
-          <h3>FLN પ્રગતિ સ્થિતિ</h3>
+          <h3>FLN પ્રગતિ સ્થિતિ / FLN Progress Status</h3>
           <Donut totals={totals} />
         </section>
         <section className="ov-card">
-          <h3>{unitTitle} પ્રમાણે રજિસ્ટર અને એન્ટ્રી</h3>
-          <div className="ov-key"><span><i className="reg" />રજિસ્ટર</span><span><i className="ent" />એન્ટ્રી</span></div>
-          {chartRows.length ? <BarChart rows={chartRows} /> : <p className="muted">કોઈ ડેટા નથી.</p>}
-          {rows.length > chartRows.length && <small className="muted">સૌથી વધુ રજિસ્ટર વાળા {chartRows.length} {unitTitle} બતાવ્યા છે.</small>}
+          <h3>{unitTitle} પ્રમાણે રજિસ્ટર અને એન્ટ્રી / Register vs Entries{unitEn ? ` by ${unitEn}` : ''}</h3>
+          <div className="ov-key"><span><i className="reg" />રજિસ્ટર / Register</span><span><i className="ent" />એન્ટ્રી / Entries</span></div>
+          {chartRows.length ? <BarChart rows={chartRows} /> : <p className="muted">કોઈ ડેટા નથી / No data.</p>}
+          {rows.length > chartRows.length && <small className="muted">સૌથી વધુ રજિસ્ટર વાળા {chartRows.length} {unitTitle} બતાવ્યા છે / Top {chartRows.length} by register.</small>}
         </section>
         <section className="ov-card">
-          <h3>{unitTitle} પ્રમાણે નિપુણ %</h3>
+          <h3>{unitTitle} પ્રમાણે નિપુણ % / Nipun %{unitEn ? ` by ${unitEn}` : ''}</h3>
           <ul className="ov-progress">
             {nipunRows.map((row) => (
               <li key={row.key}>
@@ -292,14 +292,14 @@ export default function DashboardOverview({ unitTitle, monthLabel, rows, totals,
                 </button>
               </li>
             ))}
-            {!nipunRows.length && <li className="muted">કોઈ ડેટા નથી.</li>}
+            {!nipunRows.length && <li className="muted">કોઈ ડેટા નથી / No data.</li>}
           </ul>
-          {rows.length > nipunRows.length && <small className="muted">ટોચના {nipunRows.length} {unitTitle} બતાવ્યા છે.</small>}
+          {rows.length > nipunRows.length && <small className="muted">ટોચના {nipunRows.length} {unitTitle} બતાવ્યા છે / Top {nipunRows.length} shown.</small>}
         </section>
         <section className="ov-card">
-          <h3>માસવાર પ્રગતિ</h3>
-          <div className="ov-key"><span><i className="ent" />એન્ટ્રી %</span><span><i className="nip" />નિપુણ %</span></div>
-          {hasTrend ? <TrendChart trend={trend} /> : <p className="muted">હજી કોઈ માસની એન્ટ્રી નથી.</p>}
+          <h3>માસવાર પ્રગતિ / Month-wise Progress</h3>
+          <div className="ov-key"><span><i className="ent" />એન્ટ્રી % / Entry %</span><span><i className="nip" />નિપુણ % / Nipun %</span></div>
+          {hasTrend ? <TrendChart trend={trend} /> : <p className="muted">હજી કોઈ માસની એન્ટ્રી નથી / No monthly entries yet.</p>}
         </section>
       </div>
     </div>
