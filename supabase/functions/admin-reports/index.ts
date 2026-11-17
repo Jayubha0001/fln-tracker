@@ -10,7 +10,8 @@ import {
 } from '../_shared/reportMetrics.js';
 import { GRADE_RULES } from '../_shared/assessmentRules.js';
 import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
-import { buildSchoolYearWorkbook, schoolYearPlainTables } from '../_shared/schoolYearWorkbook.js';
+import { buildSchoolYearWorkbook, schoolYearPlainTables, scopeMeta } from '../_shared/schoolYearWorkbook.js';
+import { assembleScopeYearReport, CHILD_GROUP, SCOPE_GRADES, sampleSchoolInScope, scopeLevelAllowed } from '../_shared/scopeYearReport.js';
 import { canAccessSchoolReport, reportScope } from '../_shared/reportAuthorization.js';
 
 const corsHeaders = {
@@ -300,6 +301,63 @@ function aggregateSchoolMetrics(
     || String(left.block || '').localeCompare(String(right.block || '')));
 }
 
+type ScopeYearRequest = { level?: unknown; district?: unknown; block?: unknown };
+const cleanName = (value: unknown) => (typeof value === 'string' ? value.trim().slice(0, 120) : '');
+const asciiSlug = (value: string) => value.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'all';
+
+// State / District / Block annual report: numbers come from fln_group_stats (SQL) through the caller's own JWT (RLS).
+async function buildScopeYearReport(client: ReturnType<typeof createClient>, scope: ReportScope, request: ScopeYearRequest) {
+  const level = String(request.level ?? '');
+  if (!scopeLevelAllowed(scope, level)) return { status: 403, error: 'આ સ્તરનો report તમારા accountને મળતો નથી.' };
+  const district = cleanName(request.district);
+  const block = cleanName(request.block);
+  if ((level !== 'state' && !district) || (level === 'block' && !block)) return { status: 400, error: 'જિલ્લો/તાલુકો આપવો જરૂરી છે.' };
+
+  let schoolQuery = client.from('schools').select('id,code,district,block').eq('active', true);
+  if (level !== 'state') schoolQuery = schoolQuery.eq('district', district);
+  if (level === 'block') schoolQuery = schoolQuery.eq('block', block);
+  const schools = await loadRows(schoolQuery.order('code'), PAGE_SIZE, MAX_REPORT_ROWS);
+  if (!schools.length) return { status: 404, error: 'આ વિસ્તારની શાળાઓ મળી નથી અથવા પરવાનગી નથી.' };
+  if (!sampleSchoolInScope(scope, level, schools[0].code)) return { status: 403, error: 'આ વિસ્તારનો report તમારા accountને મળતો નથી.' };
+
+  const rpcArgs = (grade: string | null, month: string | null, group: string) => ({
+    p_group: group,
+    p_district: level === 'state' ? null : district,
+    p_block: level === 'block' ? block : null,
+    p_dhoran: grade,
+    p_month: month,
+  });
+  const jobs: Array<{ grade: string; month: string }> = [];
+  for (const grade of SCOPE_GRADES) for (const month of SCHOOL_YEAR_MONTHS) jobs.push({ grade, month: month.key });
+  const statRows: Record<string, Record<string, unknown[]>> = { B: {}, '1': {}, '2': {} };
+  for (let start = 0; start < jobs.length; start += 6) {
+    const batch = jobs.slice(start, start + 6);
+    const results = await Promise.all(batch.map((job) => client.rpc('fln_group_stats', rpcArgs(job.grade, job.month, CHILD_GROUP[level as keyof typeof CHILD_GROUP]))));
+    results.forEach((result, index) => {
+      if (result.error) throw result.error;
+      statRows[batch[index].grade][batch[index].month] = result.data || [];
+    });
+  }
+  let latestKey = '';
+  for (const month of SCHOOL_YEAR_MONTHS) {
+    if (SCOPE_GRADES.some((grade) => (statRows[grade][month.key] as Array<{ entered: unknown }>).some((row) => Number(row.entered) > 0))) latestKey = month.key;
+  }
+  const schoolStats = await client.rpc('fln_group_stats', rpcArgs(null, latestKey || SCHOOL_YEAR_MONTHS[0].key, 'school'));
+  if (schoolStats.error) throw schoolStats.error;
+  const absentRows = await loadRows(
+    client.from('entries').select('school_id,dhoran,month').eq('answers->>absent', 'yes')
+      .in('month', SCHOOL_YEAR_MONTHS.map((month) => month.key)).order('school_id').order('student_id'),
+    PAGE_SIZE,
+    MAX_REPORT_ROWS,
+  );
+  const report = assembleScopeYearReport({ level, statRows, absentRows, schools, schoolRows: schoolStats.data || [] });
+  return {
+    status: 200,
+    report: { ...report, meta: scopeMeta(level, { district, block }, new Date(), schools.length) },
+    fileName: `fln-${level}-${asciiSlug(level === 'state' ? 'gujarat' : level === 'district' ? district : `${district}-${block}`)}-2026-27.xlsx`,
+  };
+}
+
 async function buildSchoolYearReport(client: ReturnType<typeof createClient>, schoolId: string, scope: ReportScope) {
   const { data: school, error: schoolError } = await client.from('schools')
     .select('id,code,name,district,block')
@@ -328,7 +386,8 @@ async function buildSchoolYearReport(client: ReturnType<typeof createClient>, sc
   return { school, gradeRows };
 }
 
-function schoolYearWorkbook(report: NonNullable<Awaited<ReturnType<typeof buildSchoolYearReport>>>) {
+// deno-lint-ignore no-explicit-any
+function schoolYearWorkbook(report: any) {
   // Fallback (plain, but bilingual Gujarati / English headers) - styled version below is tried first.
   const workbook = XLSX.utils.book_new();
   for (const table of schoolYearPlainTables(report)) {
@@ -337,7 +396,8 @@ function schoolYearWorkbook(report: NonNullable<Awaited<ReturnType<typeof buildS
   return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
 }
 
-async function schoolYearWorkbookBytes(report: NonNullable<Awaited<ReturnType<typeof buildSchoolYearReport>>>) {
+// deno-lint-ignore no-explicit-any
+async function schoolYearWorkbookBytes(report: any) {
   try {
     // Dynamic import: ExcelJS ma kai gadbad hoy to baki badha reports ne asar na thay.
     const { default: ExcelJS } = await import('npm:exceljs@4.4.0');
@@ -545,13 +605,25 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  let body: { action?: unknown; filters?: unknown; page?: unknown; schoolId?: unknown };
+  let body: { action?: unknown; filters?: unknown; page?: unknown; schoolId?: unknown; level?: unknown; district?: unknown; block?: unknown };
   try {
     body = await request.json();
   } catch {
     return jsonResponse(400, { error: 'Request માન્ય JSON નથી.' });
   }
   try {
+    if (body.action === 'scope-year-report') {
+      const result = await buildScopeYearReport(userClient, scope, body);
+      if (result.status !== 200 || !result.report) return jsonResponse(result.status, { error: result.error || 'Report બન્યો નથી.' });
+      return new Response(await schoolYearWorkbookBytes(result.report), {
+        headers: {
+          ...corsHeaders,
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${result.fileName}"`,
+        },
+      });
+    }
     if (body.action === 'school-year-report') {
       if (typeof body.schoolId !== 'string'
         || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.schoolId)) {

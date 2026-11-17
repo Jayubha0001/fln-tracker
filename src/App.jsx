@@ -163,7 +163,7 @@ export default function App() {
   }
 
   if (supabaseConfigError) return <main className="auth-page"><p className="error">{supabaseConfigError}</p></main>;
-  if (authLoading || profileLoading) return <main className="auth-page"><p>લોડ થાય છે…</p></main>;
+  if (authLoading || profileLoading) return <main className="auth-page"><p>લોડ થાય છે… / Loading…</p></main>;
   if (error && !session) return <main className="auth-page"><p className="error" role="alert">{error}</p><Login supabase={supabase} supabaseUrl={import.meta.env.VITE_SUPABASE_URL} /></main>;
   if (!session) return <Login supabase={supabase} supabaseUrl={import.meta.env.VITE_SUPABASE_URL} />;
   if (error) {
@@ -171,7 +171,7 @@ export default function App() {
       <main className="auth-page">
         <div className="card auth-card">
           <p className="error" role="alert">{error}</p>
-          <button onClick={signOut}>લૉગઆઉટ</button>
+          <button onClick={signOut}>લૉગઆઉટ / Logout</button>
         </div>
       </main>
     );
@@ -193,7 +193,7 @@ export default function App() {
     return <ScopedDashboard supabase={supabase} profile={profile} onSignOut={signOut} />;
   }
   if (profile.role !== 'school' || !school) {
-    return <main className="auth-page"><p className="error">આ account માટે યોગ્ય role સેટ નથી.</p><button onClick={signOut}>લૉગઆઉટ</button></main>;
+    return <main className="auth-page"><p className="error">આ account માટે યોગ્ય role સેટ નથી.</p><button onClick={signOut}>લૉગઆઉટ / Logout</button></main>;
   }
   return <SchoolTracker supabase={supabase} school={school} onSignOut={signOut} />;
 }
@@ -231,7 +231,7 @@ function SchoolTracker({ supabase, school, onSignOut }) {
             ))}
           </div>
           <label>માસ
-            <select aria-label="માસ" value={month} onChange={(e) => leaveEntry(() => setMonth(e.target.value))}>
+            <select aria-label="માસ / Month" value={month} onChange={(e) => leaveEntry(() => setMonth(e.target.value))}>
               {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
             </select>
           </label>

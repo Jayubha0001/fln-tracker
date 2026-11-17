@@ -296,7 +296,7 @@ export default function SchoolStudentImport({ supabase, school, onImported }) {
           <div className="scroll">
             <table>
               <thead>
-                <tr><th>Excel Row</th><th>SchoolId</th><th>વિદ્યાર્થી</th><th>ધોરણ</th><th>GRNo</th><th>સ્થિતિ / કારણ</th></tr>
+                <tr><th>Excel Row</th><th>SchoolId</th><th>વિદ્યાર્થી</th><th>ધોરણ</th><th>GRNo</th><th>સ્થિતિ / કારણ / Status / Reason</th></tr>
               </thead>
               <tbody>
                 {rows.map((row) => (

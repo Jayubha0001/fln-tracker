@@ -134,11 +134,11 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
       </div>
 
       <div className="dash-kpis">
-        <div className="dash-kpi"><span>કુલ વિદ્યાર્થી</span><b>{allTotal}</b><small>3 ધોરણ</small></div>
+        <div className="dash-kpi"><span>કુલ વિદ્યાર્થી / Total Students</span><b>{allTotal}</b><small>3 ધોરણ / 3 Classes</small></div>
         <div className="dash-kpi"><span>{monthLabel(month)} એન્ટ્રી</span><b>{allSaved}</b><small>{pct(allSaved, allTotal)}% · ગેરહાજર સહિત</small></div>
-        <div className="dash-kpi p"><span>અપૂર્ણ મૂલ્યાંકન</span><b>{allIncomplete}</b><small>બધા જવાબ હજી નોંધાયા નથી</small></div>
+        <div className="dash-kpi p"><span>અપૂર્ણ મૂલ્યાંકન / Incomplete Assessment</span><b>{allIncomplete}</b><small>બધા જવાબ હજી નોંધાયા નથી / Not all answers recorded yet</small></div>
         <div className="dash-kpi n"><span>નિપુણ</span><b>{allN}</b><small>{pct(allN, allTotal)}% વિદ્યાર્થી</small></div>
-        <div className="dash-kpi"><span>ગેરહાજર</span><b>{allAbsent}</b><small>શાળામાં છે, પરીક્ષામાં નથી</small></div>
+        <div className="dash-kpi"><span>ગેરહાજર</span><b>{allAbsent}</b><small>શાળામાં છે, પરીક્ષામાં નથી / In school, not in the exam</small></div>
         <div className="dash-kpi u"><span>બાકી assessment</span><b>{allTotal - allSaved}</b><small>હાલના મહિને entry નથી</small></div>
       </div>
 
@@ -157,15 +157,15 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
 
       <div className="card dash-ledger">
         <div className="dash-ledger-head">
-          <b>ગણિત ટ્રેકર (લેજર)</b>
+          <b>ગણિત ટ્રેકર (લેજર) / Maths Tracker (Ledger)</b>
           <span>{info.label} · {school.name} ({school.code})</span>
           <small>{school.district} › {school.block} › {school.cluster}</small>
         </div>
-        <label className="ss-teacher">વર્ગ શિક્ષકનું નામ <input value={teacher} onChange={(e) => saveTeacher(e.target.value)} /></label>
+        <label className="ss-teacher">વર્ગ શિક્ષકનું નામ / Class Teacher Name <input value={teacher} onChange={(e) => saveTeacher(e.target.value)} /></label>
         <div className="scroll">
           <table className="dash-ledger-table">
             <thead>
-              <tr><th rowSpan="2">ક્રમ</th><th rowSpan="2">માસ</th><th rowSpan="2">રજિસ્ટર</th><th colSpan="3" className="span">FLN ના વિદ્યાર્થીઓની સંખ્યા</th><th rowSpan="2">FLN સિદ્ધિ %</th></tr>
+              <tr><th rowSpan="2">ક્રમ</th><th rowSpan="2">માસ / Month</th><th rowSpan="2">રજિસ્ટર</th><th colSpan="3" className="span">FLN ના વિદ્યાર્થીઓની સંખ્યા</th><th rowSpan="2">FLN સિદ્ધિ %</th></tr>
               <tr><th className="hu">ઉદયમાન<br /><small>0–30%</small></th><th className="hp">પ્રગતિશીલ<br /><small>31–79%</small></th><th className="hn">નિપુણ<br /><small>80%+</small></th></tr>
             </thead>
             <tbody>
@@ -185,7 +185,7 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
       <div className="card">
         <h3>🎯 વિધાન પ્રમાણે પરિણામ – {info.label} · {monthLabel(month)}</h3>
         {weakest.length > 0 && (
-          <div className="ss-weak"><b>સુધારાની જરૂર:</b> {weakest.map((s) => <span key={s.no}>#{s.no} ({s.p}%)</span>)}</div>
+          <div className="ss-weak"><b>સુધારાની જરૂર: / Needs improvement:</b> {weakest.map((s) => <span key={s.no}>#{s.no} ({s.p}%)</span>)}</div>
         )}
         {g.skills.map((s) => (
           <div className="ss-skill" key={s.no}>
@@ -213,10 +213,10 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
                 <span className="badge todo">{x.entry ? `${x.r.done}/${x.r.total}` : 'બાકી'}</span>
               </div>
               <details className="student-progress-details">
-                <summary>માસિક પ્રગતિ અને કૌશલ્ય</summary>
+                <summary>માસિક પ્રગતિ અને કૌશલ્ય / Monthly Progress and Skills</summary>
                 <div className="scroll">
                   <table className="student-month-history">
-                    <thead><tr><th>માસ</th><th>સ્થિતિ</th><th>હા / પૂર્ણ</th></tr></thead>
+                    <thead><tr><th>માસ / Month</th><th>સ્થિતિ</th><th>હા / પૂર્ણ / Yes / Complete</th></tr></thead>
                     <tbody>{x.history.map((item) => (
                       <tr key={item.key}>
                         <td>{item.label}</td>
@@ -228,7 +228,7 @@ export default function SchoolSummary({ supabase, school, dhoran, month }) {
                 </div>
                 <h4>{monthLabel(month)}ના કૌશલ્ય પરિણામ</h4>
                 {!x.entry && <p className="muted">આ મહિના માટે assessment entry નથી.</p>}
-                {x.entry && x.r.cat === 'U' && <p className="muted">વર્તમાન પરિણામ ઉદયમાન છે; અનુસરણ માટે કૌશલ્ય પરિણામો જુઓ.</p>}
+                {x.entry && x.r.cat === 'U' && <p className="muted">વર્તમાન પરિણામ ઉદયમાન છે; અનુસરણ માટે કૌશલ્ય પરિણામો જુઓ. / Current result is Udayman; see the skill results for follow-up.</p>}
                 {x.entry && <ul className="student-skill-progress">
                   {(STATEMENTS[dhoran] || []).map((statement) => {
                     const answer = x.entry.answers?.[statement.n];

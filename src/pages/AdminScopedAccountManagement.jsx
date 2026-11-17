@@ -484,7 +484,7 @@ export default function AdminScopedAccountManagement({
         )}
         <label>Account status
           <select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}>
-            <option value="">બધી સ્થિતિ</option>
+            <option value="">બધી સ્થિતિ / All Status</option>
             <option value="active">Active</option>
             <option value="missing">Missing</option>
             <option value="inactive">Inactive</option>
@@ -492,7 +492,7 @@ export default function AdminScopedAccountManagement({
             <option value="needs_attention">Auth/profile mismatch</option>
           </select>
         </label>
-        <button type="submit" className="primary filter-submit" disabled={busy}>ફિલ્ટર લાગુ કરો</button>
+        <button type="submit" className="primary filter-submit" disabled={busy}>ફિલ્ટર લાગુ કરો / Apply Filter</button>
       </form>
       {(!appliedFilters.status || appliedFilters.status === 'missing') && (
         <div className="row bulk-create-row">
@@ -522,7 +522,7 @@ export default function AdminScopedAccountManagement({
       <div className="scroll scoped-account-table">
         <table className="report-table">
           <thead><tr>
-            <th>પસંદ કરો</th><th>Account Type</th><th>District / Code</th><th>Block / Code</th>
+            <th>પસંદ કરો / Select</th><th>Account Type</th><th>District / Code</th><th>Block / Code</th>
             <th>School / ID</th><th>Login ID</th><th>Actions</th>
           </tr></thead>
           <tbody>
@@ -576,9 +576,9 @@ export default function AdminScopedAccountManagement({
       </div>
       {loading && <p role="status">Account યાદી લોડ થઈ રહી છે…</p>}
       <div className="row between">
-        <button type="button" disabled={loading || busy || page <= 1} onClick={() => setPage((current) => current - 1)}>પાછળનું પાનું</button>
+        <button type="button" disabled={loading || busy || page <= 1} onClick={() => setPage((current) => current - 1)}>પાછળનું પાનું / Previous Page</button>
         <span className="muted">કુલ {total.toLocaleString()} · પાનું {page}/{pageCount} (દરેક પાનામાં {PAGE_SIZE})</span>
-        <button type="button" disabled={loading || busy || page >= pageCount} onClick={() => setPage((current) => current + 1)}>આગળનું પાનું</button>
+        <button type="button" disabled={loading || busy || page >= pageCount} onClick={() => setPage((current) => current + 1)}>આગળનું પાનું / Next Page</button>
       </div>
       {editingSchool && schoolForm && (
         <form className="card scoped-school-edit" onSubmit={saveSchool}>

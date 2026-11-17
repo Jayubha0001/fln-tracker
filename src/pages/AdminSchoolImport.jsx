@@ -185,7 +185,7 @@ export default function AdminSchoolImport({ supabase, onImportComplete }) {
       {previewReady && (
         <div className="import-stats">
           <div><dt>નવી valid શાળાઓ</dt><dd>{summary.new || 0}</dd></div>
-          <div><dt>પહેલેથી રહેલી</dt><dd>{summary.existing || 0}</dd></div>
+          <div><dt>પહેલેથી રહેલી / Already Existing</dt><dd>{summary.existing || 0}</dd></div>
           <div><dt>Invalid IDs / જરૂરી માહિતી</dt><dd>{summary.invalid || 0}</dd></div>
           <div><dt>Uploadમાં duplicate IDs</dt><dd>{summary.duplicate_file || 0}</dd></div>
         </div>
@@ -205,9 +205,9 @@ export default function AdminSchoolImport({ supabase, onImportComplete }) {
             </table>
           </div>
           <div className="row between">
-            <button disabled={outcomePage <= 0} onClick={() => setOutcomePage((page) => page - 1)}>પાછળનું પાનું</button>
+            <button disabled={outcomePage <= 0} onClick={() => setOutcomePage((page) => page - 1)}>પાછળનું પાનું / Previous Page</button>
             <span className="muted">Rows {outcomePage * outcomePageSize + 1}–{Math.min((outcomePage + 1) * outcomePageSize, outcomes.length)} / {outcomes.length.toLocaleString()}</span>
-            <button disabled={outcomePage + 1 >= outcomePageCount} onClick={() => setOutcomePage((page) => page + 1)}>આગળનું પાનું</button>
+            <button disabled={outcomePage + 1 >= outcomePageCount} onClick={() => setOutcomePage((page) => page + 1)}>આગળનું પાનું / Next Page</button>
           </div>
         </>
       )}

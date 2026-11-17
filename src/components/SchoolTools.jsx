@@ -100,13 +100,13 @@ export function SchoolRemovePanel({ supabase, viaFunction, onChanged }) {
       <label>શાળા શોધો (નામ અથવા School Code)
         <input
           type="search"
-          placeholder="ઓછામાં ઓછા 2 અક્ષર લખો…"
+          placeholder="ઓછામાં ઓછા 2 અક્ષર લખો… / Type at least 2 characters…"
           value={term}
           onChange={(event) => setTerm(event.target.value)}
         />
       </label>
-      {searching && <p className="muted">શોધાય છે…</p>}
-      {results && !searching && !shown.length && <p className="muted">કોઈ શાળા મળી નથી.</p>}
+      {searching && <p className="muted">શોધાય છે… / Searching…</p>}
+      {results && !searching && !shown.length && <p className="muted">કોઈ શાળા મળી નથી. / No school found.</p>}
       {shown.length > 0 && (
         <ul className="list school-remove-list">
           {shown.map((item) => (
@@ -116,8 +116,8 @@ export function SchoolRemovePanel({ supabase, viaFunction, onChanged }) {
                 <br /><small className="muted">{item.district} › {item.block}{item.active ? '' : ' · નિષ્ક્રિય'}</small>
               </span>
               {item.active
-                ? <button type="button" className="danger" disabled={busyId === item.id} onClick={() => change(item, false)}>🗑 કાઢો</button>
-                : !viaFunction && <button type="button" disabled={busyId === item.id} onClick={() => change(item, true)}>↺ ચાલુ કરો</button>}
+                ? <button type="button" className="danger" disabled={busyId === item.id} onClick={() => change(item, false)}>🗑 કાઢો / 🗑 Remove</button>
+                : !viaFunction && <button type="button" disabled={busyId === item.id} onClick={() => change(item, true)}>↺ ચાલુ કરો / ↺ Restore</button>}
             </li>
           ))}
         </ul>
@@ -159,7 +159,7 @@ export function ScopedSchoolTools({ supabase, onChanged }) {
       <Panel icon="⇧" title="School Import" hint="Excel/CSV થી તમારા વિસ્તારની શાળાઓ ઉમેરો">
         <AdminSchoolImport supabase={supabase} onImportComplete={onChanged} />
       </Panel>
-      <Panel icon="＋" title="નવી શાળા ઉમેરો" hint="તમારા વિસ્તારમાં એક શાળા ઉમેરો">
+      <Panel icon="＋" title="નવી શાળા ઉમેરો / Add New School" hint="તમારા વિસ્તારમાં એક શાળા ઉમેરો">
         {error && <p className="error" role="alert">{error}</p>}
         {message && <p className="success" role="status">{message}</p>}
         <form className="card" onSubmit={add}>
@@ -174,11 +174,11 @@ export function ScopedSchoolTools({ supabase, onChanged }) {
           </label>
           <div className="row">
             <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
-            <button type="button" onClick={() => setForm(emptyForm)}>સાફ કરો</button>
+            <button type="button" onClick={() => setForm(emptyForm)}>સાફ કરો / Clear</button>
           </div>
         </form>
       </Panel>
-      <Panel icon="🗑" title="શાળા કાઢો" hint="શાળા શોધો અને યાદીમાંથી કાઢો">
+      <Panel icon="🗑" title="શાળા કાઢો / Remove School" hint="શાળા શોધો અને યાદીમાંથી કાઢો">
         <SchoolRemovePanel supabase={supabase} viaFunction onChanged={onChanged} />
       </Panel>
     </div>

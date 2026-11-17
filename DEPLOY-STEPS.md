@@ -177,3 +177,17 @@ npx vercel --prod            # preview barabar hoy to j
 [ ] School login: Dashboard ma selector bar repeat nathi; Annual report download
 [ ] Real password reset na karo (test account j)
 # 5) Haju baki (approval vagar nahi): migration 202610150003 (District/Block account list), commit/push
+
+## 19. વાર્ષિક FLN Report: State / District / Block (ગુજરાતી + English) + dashboard sudharo
+Navu action: admin-reports -> action "scope-year-report" (level: state | district | block)
+- Admin: State / District / Block; District login: potano jillo + tena block; Block login: potano block; School: potano school report (pehla jevo)
+- Server par check: role + code-prefix (RLS vali JWT thi); bija jillo/block mate 404/403
+- Excel: સારાંશ (rajya/jillo/taluko), 3 ધોરણ sheet, "જિલ્લા/તાલુકા/શાળા પ્રમાણે" ranking (nipun % anusar), masvar nipun % matrix, Action Plan, માપદંડ
+- Dashboard hero ma "⬇ વાર્ષિક ... Report" button (drill-down level mujab; shala par jao to shala no report)
+Files: supabase\functions\_shared\scopeYearReport.js (NAVI), schoolYearWorkbook.js, admin-reports\index.ts,
+       src\components\ScopeYearReportButton.jsx (NAVI), AdminDashboard.jsx, DashboardOverview.jsx, src\lib\category.js (monthEn), src\index.css
+       tests\scopeYearReport.test.js (NAVI)
+Dashboard: FLN સિદ્ધિ gauge caption overlap fix; month English (Nov-26); ધોરણ names bilingual
+English: Entry, Summary(+guide), Students, School/Student Management panels, DataCheck, SchoolTools, Reports, Login, ErrorBoundary vagere ma "ગુજરાતી / English"
+DEPLOY: fakt  npx supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv --use-api   (pachhi frontend: vercel preview -> --prod)
+Verify: Admin dashboard -> "Annual State Report"; Botad par click -> "Annual District Report"; block par click -> "Annual Block Report"

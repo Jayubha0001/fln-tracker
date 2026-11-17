@@ -101,7 +101,7 @@ export default function DashboardLayout({
         <button
           type="button"
           className="sidebar-scrim"
-          aria-label="મેનુ બંધ કરો"
+          aria-label="મેનુ બંધ કરો / Close menu"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -135,7 +135,7 @@ export default function DashboardLayout({
           }}
         >
           <span className="sidebar-icon" aria-hidden="true"><NavIcon name="logout" /></span>
-          <span className="sidebar-link-copy"><b>Logout</b><small>લૉગઆઉટ</small></span>
+          <span className="sidebar-link-copy"><b>Logout</b><small>લૉગઆઉટ / Logout</small></span>
         </button>
       </aside>
 
@@ -144,7 +144,7 @@ export default function DashboardLayout({
           <button
             type="button"
             className="sidebar-toggle"
-            aria-label="મેનુ ખોલો અથવા બંધ કરો"
+            aria-label="મેનુ ખોલો અથવા બંધ કરો / Open or close menu"
             aria-expanded={mobileOpen}
             onClick={() => {
               if (window.matchMedia('(max-width: 760px)').matches) setMobileOpen((open) => !open);

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
-import { calc, CLASSES, MONTHS, currentMonthKey } from '../lib/category';
+import { calc, CLASSES, MONTHS, currentMonthKey, monthEn } from '../lib/category';
+import ScopeYearReportButton from '../components/ScopeYearReportButton.jsx';
+import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 import { loadAllRows } from '../lib/loadAllRows';
 import DashboardOverview from '../components/DashboardOverview.jsx';
 import { isAbsent } from '../lib/absent.js';
@@ -13,6 +15,7 @@ const LEVEL_BI = { district: 'જિલ્લો / District', block: 'તાલ�
 const GRADE_KEYS = Object.keys(CLASSES);
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
 const monthLabel = (key) => MONTHS.find((m) => m.key === key)?.label || key;
+const monthBi = (key) => `${monthLabel(key)} / ${monthEn(key)}`;
 const defaultMonth = currentMonthKey();
 
 function TriBar({ u, p, n }) {
@@ -229,7 +232,7 @@ export default function AdminDashboard({ supabase, profile }) {
     if (scope.school) {
       return GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => {
         const r = gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 };
-        return { key: k, label: CLASSES[k].label, ...r, absent: absentInfo.byGrade.get(k) || 0 };
+        return { key: k, label: `${CLASSES[k].label} / ${GRADE_EN[k]}`, ...r, absent: absentInfo.byGrade.get(k) || 0 };
       });
     }
     return groups.map((r) => ({
@@ -355,14 +358,18 @@ export default function AdminDashboard({ supabase, profile }) {
             <path d="M10 70 A50 50 0 0 1 110 70" pathLength="100" className="dash-gauge-fill"
               strokeDasharray={`${Math.min(100, pct(overviewTotals.n, overviewTotals.registered))} 100`} />
             <text x="60" y="58" textAnchor="middle" className="dash-gauge-num">{pct(overviewTotals.n, overviewTotals.registered)}%</text>
-            <text x="60" y="73" textAnchor="middle" className="dash-gauge-cap">FLN સિદ્ધિ / ACHIEVEMENT</text>
           </svg>
+          <b className="dash-gauge-title">FLN સિદ્ધિ <small>/ Achievement</small></b>
           <span>એન્ટ્રી / Entries {pct(overviewTotals.entered, overviewTotals.registered)}% · નિપુણ / Nipun {overviewTotals.n.toLocaleString()}</span>
         </div>
         <div className="dash-hero-actions">
           <label className="dash-live"><input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Live</label>
           <button type="button" onClick={() => load()} disabled={busy}>↻ Refresh</button>
           <button type="button" onClick={exportExcel} disabled={busy}>⬇ Excel</button>
+          {profile?.role !== 'school' && !scope.school && (profile?.role === 'admin' || (profile?.role === 'district' && scope.district) || (profile?.role === 'block' && scope.district && scope.block)) && (
+            <ScopeYearReportButton supabase={supabase} district={scope.district || ''} block={scope.block || ''} />
+          )}
+          {profile?.role !== 'school' && scope.school && <SchoolYearReportButton supabase={supabase} school={{ id: scope.school.id, code: scope.school.code }} />}
           <small>{updatedAt ? `અપડેટ / Updated: ${updatedAt.toLocaleTimeString()}` : ''}</small>
         </div>
       </div>
@@ -385,12 +392,13 @@ export default function AdminDashboard({ supabase, profile }) {
       <DashboardOverview
         unitTitle={scope.school ? 'ધોરણ' : LEVEL_TITLE[level]}
         unitEn={scope.school ? 'Class' : LEVEL_EN[level]}
-        monthLabel={monthLabel(month)}
+        monthLabel={monthBi(month)}
+        monthEn={monthEn(month)}
         rows={overviewRows}
         totals={overviewTotals}
         trend={trend}
         schoolStats={schoolStats}
-        gradeCards={scope.school ? [] : GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => ({ key: k, label: CLASSES[k].label, ...(gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 }), absent: absentInfo.byGrade.get(k) || 0 }))}
+        gradeCards={scope.school ? [] : GRADE_KEYS.filter((k) => !grade || k === grade).map((k) => ({ key: k, ...(gradeReport[k] || { registered: 0, entered: 0, u: 0, p: 0, n: 0 }), label: `${CLASSES[k].label} / ${GRADE_EN[k]}`, absent: absentInfo.byGrade.get(k) || 0 }))}
         onSelect={scope.school ? undefined : (row) => drill(row.raw)}
       />
 
@@ -398,7 +406,7 @@ export default function AdminDashboard({ supabase, profile }) {
         <>
           <div className="dash-kpis">
             <Kpi label="રજિસ્ટર વિદ્યાર્થી / Registered Students" value={studentProgress?.length?.toLocaleString() || '—'} sub={gradeInfo?.label || 'બધાં ધોરણ / All Classes'} />
-            <Kpi label={`${monthLabel(month)} assessed`} value={studentProgress ? (studentProgress.length - studentProgressCounts.pending).toLocaleString() : '—'} />
+            <Kpi label={`${monthBi(month)} assessed`} value={studentProgress ? (studentProgress.length - studentProgressCounts.pending).toLocaleString() : '—'} />
             <Kpi tone="n" label="પૂર્ણ / Complete" value={studentProgress ? studentProgressCounts.complete.toLocaleString() : '—'} />
             <Kpi tone="p" label="અપૂર્ણ / Incomplete" value={studentProgress ? studentProgressCounts.incomplete.toLocaleString() : '—'} />
             <Kpi tone="u" label="બાકી / Pending" value={studentProgress ? studentProgressCounts.pending.toLocaleString() : '—'} />
@@ -406,7 +414,7 @@ export default function AdminDashboard({ supabase, profile }) {
           </div>
           <div className="card dash-card">
             <div className="row between">
-              <h3>વિદ્યાર્થી પ્રમાણે {monthLabel(month)} assessment / Student-wise Assessment · {scope.school.name}</h3>
+              <h3>વિદ્યાર્થી પ્રમાણે {monthBi(month)} assessment / Student-wise Assessment · {scope.school.name}</h3>
               {backButton}
             </div>
             {studentProgressError && <p className="error" role="alert">{studentProgressError}</p>}
@@ -439,7 +447,7 @@ export default function AdminDashboard({ supabase, profile }) {
       {!scope.school && (
         <div className="card dash-card">
           <div className="row between">
-            <h3>{LEVEL_TITLE[level]} પ્રમાણે / by {LEVEL_EN[level]} – {monthLabel(month)} {gradeInfo ? `· ${gradeInfo.label}` : ''}</h3>
+            <h3>{LEVEL_TITLE[level]} પ્રમાણે / by {LEVEL_EN[level]} – {monthBi(month)} {gradeInfo ? `· ${gradeInfo.label}` : ''}</h3>
             {backButton}
             <div className="dash-table-tools">
               <input className="dash-search" placeholder={`${LEVEL_TITLE[level]} શોધો / Search ${LEVEL_EN[level]}…`} value={q} onChange={(e) => setQ(e.target.value)} />
@@ -532,7 +540,7 @@ export default function AdminDashboard({ supabase, profile }) {
             </tbody>
           </table>
         </div>
-        <h4>સિદ્ધ કરેલ વિધાનોની સંખ્યા પ્રમાણે રિપોર્ટ / Report by Statements Achieved – {monthLabel(month)}</h4>
+        <h4>સિદ્ધ કરેલ વિધાનોની સંખ્યા પ્રમાણે રિપોર્ટ / Report by Statements Achieved – {monthBi(month)}</h4>
         <div className="scroll">
           <table className="dash-rules">
             <thead>

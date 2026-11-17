@@ -169,7 +169,7 @@ function TrendChart({ trend }) {
   );
 }
 
-export default function DashboardOverview({ unitTitle, unitEn = '', monthLabel, rows, totals, trend = [], gradeCards = [], schoolStats = null, onSelect }) {
+export default function DashboardOverview({ unitTitle, unitEn = '', monthLabel, monthEn = '', rows, totals, trend = [], gradeCards = [], schoolStats = null, onSelect }) {
   const [pendingSearch, setPendingSearch] = useState('');
   const pending = Math.max(0, totals.registered - totals.entered);
   const attention = [...rows]
@@ -188,7 +188,7 @@ export default function DashboardOverview({ unitTitle, unitEn = '', monthLabel, 
     <div className="ov">
       <div className="ov-kpis">
         <OverviewKpi tone="blue" icon="people" label="રજિસ્ટર સંખ્યા / Registered" value={fmt(totals.registered)} sub={`${rows.length} ${unitTitle}${unitEn ? ` / ${unitEn}` : ""}`} />
-        <OverviewKpi tone="green" icon="bars" label={`${monthLabel} એન્ટ્રી / Entries`} value={fmt(totals.entered)} sub={`${pct(totals.entered, totals.registered)}% · ગેરહાજર સહિત / incl. Absent`} />
+        <OverviewKpi tone="green" icon="bars" label={`${monthLabel} એન્ટ્રી / ${monthEn} Entries`} value={fmt(totals.entered)} sub={`${pct(totals.entered, totals.registered)}% · ગેરહાજર સહિત / incl. Absent`} />
         <OverviewKpi tone="amber" icon="doc" label="ઉદયમાન / Udayman" value={fmt(totals.u)} sub={`${pct(totals.u, totals.entered)}%`} />
         <OverviewKpi tone="pink" icon="trend" label="પ્રગતિશીલ / Pragatishil" value={fmt(totals.p)} sub={`${pct(totals.p, totals.entered)}%`} />
         <OverviewKpi tone="violet" icon="trophy" label="નિપુણ / Nipun" value={fmt(totals.n)} sub={`${pct(totals.n, totals.entered)}%`} />
@@ -208,7 +208,7 @@ export default function DashboardOverview({ unitTitle, unitEn = '', monthLabel, 
       {schoolStats && (
         <section className="ov-schools">
           <div className="ov-schools-head">
-            <b>શાળા સ્થિતિ / School Status · {monthLabel}</b>
+            <b>શાળા સ્થિતિ / School Status · {monthLabel} / {monthEn}</b>
             <small>{schoolStats.eligible} શાળામાં વિદ્યાર્થી રજિસ્ટર છે / schools with students{schoolStats.noStudents ? ` · ${schoolStats.noStudents} શાળામાં વિદ્યાર્થી નથી / with none` : ''}</small>
           </div>
           <div className="ov-kpis">
@@ -230,7 +230,7 @@ export default function DashboardOverview({ unitTitle, unitEn = '', monthLabel, 
               <summary>
                 <span className="tool-ico" aria-hidden="true">!</span>
                 <b>બાકી શાળાઓની યાદી / Pending Schools ({fmt(schoolStats.pendingList.length)})</b>
-                <small>જેમાં {monthLabel} ની એક પણ એન્ટ્રી નથી / no entry in {monthLabel}</small>
+                <small>જેમાં {monthLabel} ની એક પણ એન્ટ્રી નથી / no entry in {monthEn}</small>
                 <i className="tool-chev" aria-hidden="true">⌄</i>
               </summary>
               <div className="tool-body">

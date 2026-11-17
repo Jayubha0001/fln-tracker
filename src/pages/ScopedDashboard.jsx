@@ -126,9 +126,9 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
           </label>
         </div>
         <div className="row between">
-          <button disabled={schoolPage <= 0} onClick={() => changeSchoolPage(schoolPage - 1)}>પાછળનું પાનું</button>
+          <button disabled={schoolPage <= 0} onClick={() => changeSchoolPage(schoolPage - 1)}>પાછળનું પાનું / Previous Page</button>
           <span className="muted">શાળાઓ {schools.length ? schoolPage * 100 + 1 : 0}–{Math.min((schoolPage + 1) * 100, schoolCount)} / {schoolCount.toLocaleString()}</span>
-          <button disabled={(schoolPage + 1) * 100 >= schoolCount} onClick={() => changeSchoolPage(schoolPage + 1)}>આગળનું પાનું</button>
+          <button disabled={(schoolPage + 1) * 100 >= schoolCount} onClick={() => changeSchoolPage(schoolPage + 1)}>આગળનું પાનું / Next Page</button>
         </div>
         {activeSection === 'schools' && school && (
           <section className="card">
@@ -144,8 +144,8 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
           <details className="tool">
             <summary>
               <span className="tool-ico" aria-hidden="true">🔎</span>
-              <b>તપાસ: શાળા ↔ વિદ્યાર્થી</b>
-              <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી</small>
+              <b>તપાસ: શાળા ↔ વિદ્યાર્થી / Check: Schools ↔ Students</b>
+              <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી / Schools without students and students without a school</small>
               <i className="tool-chev" aria-hidden="true">⌄</i>
             </summary>
             <div className="tool-body"><DataCheck supabase={supabase} focus="school" /></div>
@@ -157,8 +157,8 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
           <details className="tool">
             <summary>
               <span className="tool-ico" aria-hidden="true">🔎</span>
-              <b>તપાસ: વિદ્યાર્થી ↔ શાળા</b>
-              <small>શાળા વગરના વિદ્યાર્થી અને વિદ્યાર્થી વગરની શાળા</small>
+              <b>તપાસ: વિદ્યાર્થી ↔ શાળા / Check: Students ↔ Schools</b>
+              <small>શાળા વગરના વિદ્યાર્થી અને વિદ્યાર્થી વગરની શાળા / Students without a school and schools without students</small>
               <i className="tool-chev" aria-hidden="true">⌄</i>
             </summary>
             <div className="tool-body"><DataCheck supabase={supabase} focus="student" /></div>
@@ -180,7 +180,7 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
               : `બ્લોક ${schools[0]?.block || profile.block_code || ''}`}
           />
         )}
-        {schoolsLoaded && !schools.length && !error && <p className="muted">આ વિસ્તાર માટે કોઈ સક્રિય શાળા મળી નથી.</p>}
+        {schoolsLoaded && !schools.length && !error && <p className="muted">આ વિસ્તાર માટે કોઈ સક્રિય શાળા મળી નથી. / No active school found for this area.</p>}
     </DashboardLayout>
   );
 }

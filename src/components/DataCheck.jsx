@@ -79,7 +79,7 @@ export default function DataCheck({ supabase, focus = 'school' }) {
 
   const schoolBlock = (
     <section className="check-block" key="schools">
-      <h4>🏫 શાળા પ્રમાણે વિદ્યાર્થી સંખ્યા <span className={`check-pill ${zeroCount ? 'warn' : 'ok'}`}>0 વિદ્યાર્થી: {zeroCount}</span></h4>
+      <h4>🏫 શાળા પ્રમાણે વિદ્યાર્થી સંખ્યા / 🏫 Student Count by School <span className={`check-pill ${zeroCount ? 'warn' : 'ok'}`}>0 વિદ્યાર્થી: {zeroCount}</span></h4>
       <div className="row check-filters">
         {[['all', `બધી (${perSchool.length})`], ['zero', `0 વિદ્યાર્થી (${zeroCount})`], ['has', `વિદ્યાર્થી છે (${perSchool.length - zeroCount})`]].map(([key, label]) => (
           <button type="button" key={key} className={countFilter === key ? 'on' : ''} onClick={() => setCountFilter(key)}>{label}</button>
@@ -88,17 +88,17 @@ export default function DataCheck({ supabase, focus = 'school' }) {
       </div>
       <div className="scroll check-table">
         <table className="report-table">
-          <thead><tr><th>શાળા</th><th>કોડ</th><th>બ્લોક</th><th>વિદ્યાર્થી</th></tr></thead>
+          <thead><tr><th>શાળા</th><th>કોડ / Code</th><th>બ્લોક / Block</th><th>વિદ્યાર્થી</th></tr></thead>
           <tbody>
             {shownSchools.slice(0, 200).map((item) => (
               <tr key={item.id} className={item.count === 0 ? 'zero-row' : ''}>
                 <td className="left">{item.name}</td>
                 <td>{item.code}</td>
                 <td>{item.block}</td>
-                <td>{item.count === 0 ? <span className="check-pill warn">0 · વિદ્યાર્થી નથી</span> : <b>{item.count}</b>}</td>
+                <td>{item.count === 0 ? <span className="check-pill warn">0 · વિદ્યાર્થી નથી / 0 · No Students</span> : <b>{item.count}</b>}</td>
               </tr>
             ))}
-            {!shownSchools.length && <tr><td colSpan="4" className="muted">કોઈ શાળા મળી નથી.</td></tr>}
+            {!shownSchools.length && <tr><td colSpan="4" className="muted">કોઈ શાળા મળી નથી. / No school found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -107,9 +107,9 @@ export default function DataCheck({ supabase, focus = 'school' }) {
   );
   const studentBlock = (
     <section className="check-block" key="students">
-      <h4>👤 શાળા વગરના વિદ્યાર્થી <span className={`check-pill ${orphanTotal ? 'warn' : 'ok'}`}>{orphanTotal}</span></h4>
+      <h4>👤 શાળા વગરના વિદ્યાર્થી / 👤 Students without a school <span className={`check-pill ${orphanTotal ? 'warn' : 'ok'}`}>{orphanTotal}</span></h4>
       {!orphanTotal
-        ? <p className="muted">✔ બધા વિદ્યાર્થીની શાળા સક્રિય છે.</p>
+        ? <p className="muted">✔ બધા વિદ્યાર્થીની શાળા સક્રિય છે. / ✔ Every student has an active school.</p>
         : (
           <ul className="list check-list">
             {orphans.slice(0, LIMIT).map((item) => (
@@ -126,7 +126,7 @@ export default function DataCheck({ supabase, focus = 'school' }) {
   return (
     <div className="card data-check">
       <div className="row between">
-        <p className="muted">શાળા અને વિદ્યાર્થી વચ્ચેનો મેળ તપાસે છે: કઈ શાળામાં વિદ્યાર્થી નથી, અને કયા વિદ્યાર્થીની શાળા નથી/નિષ્ક્રિય છે.</p>
+        <p className="muted">શાળા અને વિદ્યાર્થી વચ્ચેનો મેળ તપાસે છે: કઈ શાળામાં વિદ્યાર્થી નથી, અને કયા વિદ્યાર્થીની શાળા નથી/નિષ્ક્રિય છે. / Checks the match between schools and students: which schools have no students and which students have no (or an inactive) school.</p>
         <button type="button" className="primary" disabled={status === 'loading'} onClick={run}>
           {status === 'loading' ? 'તપાસ ચાલુ…' : '🔎 તપાસ કરો'}
         </button>
@@ -135,12 +135,12 @@ export default function DataCheck({ supabase, focus = 'school' }) {
       {result && (
         <>
           <div className="check-summary">
-            <span>કુલ શાળા <b>{result.schoolCount}</b></span>
-            <span>કુલ વિદ્યાર્થી <b>{result.studentCount.toLocaleString()}</b></span>
-            <span>વિદ્યાર્થી વગરની શાળા <b>{result.noStudents.length}</b></span>
-            <span>શાળા વગરના વિદ્યાર્થી <b>{orphanTotal}</b></span>
+            <span>કુલ શાળા / Total Schools <b>{result.schoolCount}</b></span>
+            <span>કુલ વિદ્યાર્થી / Total Students <b>{result.studentCount.toLocaleString()}</b></span>
+            <span>વિદ્યાર્થી વગરની શાળા / Schools without students <b>{result.noStudents.length}</b></span>
+            <span>શાળા વગરના વિદ્યાર્થી / Students without a school <b>{orphanTotal}</b></span>
           </div>
-          <input type="search" placeholder="શાળા / કોડ શોધો…" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <input type="search" placeholder="શાળા / કોડ શોધો… / Search school / code…" value={search} onChange={(event) => setSearch(event.target.value)} />
           {focus === 'student' ? [studentBlock, schoolBlock] : [schoolBlock, studentBlock]}
         </>
       )}

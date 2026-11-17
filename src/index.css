@@ -919,3 +919,12 @@ td.zero-cell { color: #b02a74; font-weight: 800; background: #fff1f1; }
 .ov-legend i.a { background: #6e8aa3; } .ov-legend i.i { background: #c9d4e0; }
 .ov-kpi.teal { --tone: #2a8a9a; --tint: #d9f1f5; }
 .dash-table td.ca, .dash-table th.ca { color: #3d5a73; font-weight: 700; }
+
+/* ---- Gauge caption (no overlap) + annual report button ---- */
+.dash-gauge { gap: 4px; padding: 6px 14px 8px; }
+.dash-gauge svg { width: 116px; }
+.dash-gauge-title { color: #fff; font-size: 13px; line-height: 1.2; text-align: center; }
+.dash-gauge-title small { color: #9ff0f4; font-size: 11px; font-weight: 700; }
+.dash-gauge > span { font-size: 11px; text-align: center; max-width: 240px; line-height: 1.35; }
+.scope-year-report-action, .school-year-report-action { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scope-year-report-action .error { font-size: 12px; max-width: 320px; }

@@ -231,18 +231,18 @@ export default function AdminReports({ supabase, profile }) {
       <form className="dash-filter-card report-filters no-print" onSubmit={applyFilters}>
         <label>Start date<input required type="date" value={filters.startDate} onChange={(event) => update('startDate', event.target.value)} /></label>
         <label>End date<input required type="date" value={filters.endDate} onChange={(event) => update('endDate', event.target.value)} /></label>
-        {canFilterSchool && <label>શાળા કોડ<input inputMode="numeric" value={filters.schoolCode} onChange={(event) => update('schoolCode', event.target.value)} placeholder="બધી શાળાઓ" /></label>}
-        {isAdmin && <label>જિલ્લો<input value={filters.district} onChange={(event) => update('district', event.target.value)} /></label>}
-        {canFilterBlock && <label>તાલુકો<input value={filters.block} onChange={(event) => update('block', event.target.value)} /></label>}
+        {canFilterSchool && <label>શાળા કોડ / School Code<input inputMode="numeric" value={filters.schoolCode} onChange={(event) => update('schoolCode', event.target.value)} placeholder="બધી શાળાઓ / All Schools" /></label>}
+        {isAdmin && <label>જિલ્લો / District<input value={filters.district} onChange={(event) => update('district', event.target.value)} /></label>}
+        {canFilterBlock && <label>તાલુકો / Block<input value={filters.block} onChange={(event) => update('block', event.target.value)} /></label>}
         <label>ધોરણ
           <select value={filters.dhoran} onChange={(event) => update('dhoran', event.target.value)}>
-            <option value="">બધાં</option>
+            <option value="">બધાં / All</option>
             {Object.entries(CLASSES).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
           </select>
         </label>
         <label>Assessment month
           <select value={filters.month} onChange={(event) => update('month', event.target.value)}>
-            <option value="">બધા મહિના</option>
+            <option value="">બધા મહિના / All Months</option>
             {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
         </label>
@@ -253,7 +253,7 @@ export default function AdminReports({ supabase, profile }) {
         </label>
         <button className="primary" disabled={busy}>Report જુઓ</button>
         <button type="button" disabled={busy || !report} onClick={exportReport}>⬇ Excel</button>
-        <button type="button" disabled={busy || !report} onClick={exportPendingList}>⬇ બાકી વિદ્યાર્થીઓ</button>
+        <button type="button" disabled={busy || !report} onClick={exportPendingList}>⬇ બાકી વિદ્યાર્થીઓ / ⬇ Pending Students</button>
         <button type="button" disabled={busy || !completionMetricsAvailable} onClick={exportIncompleteList}>⬇ અપૂર્ણ assessment</button>
         <button type="button" disabled={busy || !report} onClick={() => window.print()}>🖨 Print</button>
       </form>
@@ -276,37 +276,37 @@ export default function AdminReports({ supabase, profile }) {
         <>
           <p className="muted report-filter-note">Status filter summary counts, student-wise rows અને exports પર લાગુ છે.</p>
           <div className="dash-kpis">
-            <div className="dash-kpi"><span>શાળાઓ</span><b>{report.totals.schools}</b></div>
-            <div className="dash-kpi"><span>નોંધાયેલા વિદ્યાર્થીઓ</span><b>{report.totals.enrolled}</b></div>
-            <div className="dash-kpi n"><span>મૂલ્યાંકન થયેલા વિદ્યાર્થી</span><b>{report.totals.assessed}</b></div>
+            <div className="dash-kpi"><span>શાળાઓ / Schools</span><b>{report.totals.schools}</b></div>
+            <div className="dash-kpi"><span>નોંધાયેલા વિદ્યાર્થીઓ / Enrolled Students</span><b>{report.totals.enrolled}</b></div>
+            <div className="dash-kpi n"><span>મૂલ્યાંકન થયેલા વિદ્યાર્થી / Assessed Students</span><b>{report.totals.assessed}</b></div>
             <div className="dash-kpi n"><span>Assessment records</span><b>{report.totals.submitted}</b></div>
             <div className="dash-kpi n"><span>પૂર્ણ assessment</span><b>{completionMetricsAvailable ? report.totals.complete : '—'}</b></div>
             <div className="dash-kpi p"><span>અપૂર્ણ assessment</span><b>{completionMetricsAvailable ? report.totals.incomplete : '—'}</b></div>
-            <div className="dash-kpi u"><span>બાકી</span><b>{report.totals.pending}</b></div>
+            <div className="dash-kpi u"><span>બાકી / Pending</span><b>{report.totals.pending}</b></div>
             <div className="dash-kpi"><span>Completion</span><b>{report.totals.completionPercent}%</b></div>
           </div>
 
           <div className="report-rollups">
             <div className="card dash-card">
-              <h3>જિલ્લા પ્રમાણે પ્રગતિ</h3>
+              <h3>જિલ્લા પ્રમાણે પ્રગતિ / Progress by District</h3>
               {report.districts.length ? <div className="scroll dash-scroll"><table className="dash-table">
-                <thead><tr><th className="left">જિલ્લો</th><th>શાળાઓ</th><th>નોંધાયેલા</th><th>મૂલ્યાંકન થયેલા</th><th>Assessment records</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>બાકી</th><th>Completion %</th></tr></thead>
+                <thead><tr><th className="left">જિલ્લો / District</th><th>શાળાઓ / Schools</th><th>નોંધાયેલા / Enrolled</th><th>મૂલ્યાંકન થયેલા / Assessed</th><th>Assessment records</th><th>પૂર્ણ / Complete</th><th>અપૂર્ણ / Incomplete</th><th>બાકી / Pending</th><th>Completion %</th></tr></thead>
                 <tbody>{report.districts.map((row) => <tr key={row.district}>
                   <td className="left">{row.district}</td><td>{row.schools}</td><td>{row.enrolled}</td><td>{row.assessed}</td>
                   <td>{row.submitted}</td><td>{row.complete}</td><td>{row.incomplete}</td><td>{row.pending}</td><td>{row.completionPercent}%</td>
                 </tr>)}</tbody>
-              </table></div> : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી.</p>}
+              </table></div> : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી. / No data available yet.</p>}
             </div>
             <div className="card dash-card">
-              <h3>બ્લોક પ્રમાણે પ્રગતિ</h3>
+              <h3>બ્લોક પ્રમાણે પ્રગતિ / Progress by Block</h3>
               {report.blocks.length ? <div className="scroll dash-scroll"><table className="dash-table">
-                <thead><tr><th className="left">જિલ્લો</th><th className="left">બ્લોક</th><th>શાળાઓ</th><th>નોંધાયેલા</th><th>મૂલ્યાંકન થયેલા</th><th>Assessment records</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>બાકી</th><th>Completion %</th></tr></thead>
+                <thead><tr><th className="left">જિલ્લો / District</th><th className="left">બ્લોક / Block</th><th>શાળાઓ / Schools</th><th>નોંધાયેલા / Enrolled</th><th>મૂલ્યાંકન થયેલા / Assessed</th><th>Assessment records</th><th>પૂર્ણ / Complete</th><th>અપૂર્ણ / Incomplete</th><th>બાકી / Pending</th><th>Completion %</th></tr></thead>
                 <tbody>{report.blocks.map((row) => <tr key={`${row.district}:${row.block}`}>
                   <td className="left">{row.district}</td><td className="left">{row.block}</td><td>{row.schools}</td>
                   <td>{row.enrolled}</td><td>{row.assessed}</td><td>{row.submitted}</td><td>{row.complete}</td><td>{row.incomplete}</td>
                   <td>{row.pending}</td><td>{row.completionPercent}%</td>
                 </tr>)}</tbody>
-              </table></div> : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી.</p>}
+              </table></div> : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી. / No data available yet.</p>}
             </div>
           </div>
 
@@ -314,7 +314,7 @@ export default function AdminReports({ supabase, profile }) {
             <h3>દિવસ પ્રમાણે સાચવેલી entries</h3>
             {report.daily.length ? (
               <div className="scroll dash-scroll"><table className="dash-table">
-                <thead><tr><th className="left">તારીખ</th><th>Entries</th><th className="wide">પ્રમાણ</th></tr></thead>
+                <thead><tr><th className="left">તારીખ / Date</th><th>Entries</th><th className="wide">પ્રમાણ / Proportion</th></tr></thead>
                 <tbody>{report.daily.map((item) => {
                   const max = Math.max(...report.daily.map((d) => d.submitted), 1);
                   return (
@@ -327,9 +327,9 @@ export default function AdminReports({ supabase, profile }) {
           </div>
 
           <div className="card dash-card">
-            <h3>માસ પ્રમાણે મૂલ્યાંકન</h3>
+            <h3>માસ પ્રમાણે મૂલ્યાંકન / Assessment by Month</h3>
             {report.monthly.length ? <div className="scroll dash-scroll"><table className="dash-table">
-              <thead><tr><th className="left">Assessment month</th><th>નોંધાયેલા</th><th>એન્ટ્રી થયેલ</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>બાકી</th></tr></thead>
+              <thead><tr><th className="left">Assessment month</th><th>નોંધાયેલા / Enrolled</th><th>એન્ટ્રી થયેલ / Entries Done</th><th>પૂર્ણ / Complete</th><th>અપૂર્ણ / Incomplete</th><th>બાકી / Pending</th></tr></thead>
               <tbody>{report.monthly.map((row) => <tr key={row.month}>
                 <td className="left">{row.month}</td><td>{row.enrolled}</td><td>{row.submitted}</td>
                 <td>{row.complete}</td><td>{row.incomplete}</td><td>{row.pending}</td>
@@ -341,7 +341,7 @@ export default function AdminReports({ supabase, profile }) {
             <h3>Learning outcome (વિધાન) પ્રમાણે કામગીરી</h3>
             {report.outcomes.length ? (
               <div className="scroll dash-scroll"><table className="dash-table">
-                <thead><tr><th className="left">ધોરણ</th><th>વિધાન</th><th className="left">વિગત</th><th className="hn">હા</th><th className="hu">ના</th><th className="wide">હા %</th></tr></thead>
+                <thead><tr><th className="left">ધોરણ</th><th>વિધાન / Statement</th><th className="left">વિગત / Details</th><th className="hn">હા / Yes</th><th className="hu">ના / No</th><th className="wide">હા % / Yes %</th></tr></thead>
                 <tbody>{report.outcomes.map((item) => (
                   <tr key={`${item.dhoran}-${item.outcome}`}>
                     <td className="left">{CLASSES[item.dhoran]?.label || item.dhoran}</td><td><b>{item.outcome}</b></td>
@@ -351,7 +351,7 @@ export default function AdminReports({ supabase, profile }) {
                   </tr>
                 ))}</tbody>
               </table></div>
-            ) : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી.</p>}
+            ) : <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી. / No data available yet.</p>}
           </div>
 
           <div className="card dash-card">
@@ -368,7 +368,7 @@ export default function AdminReports({ supabase, profile }) {
           <div className="card dash-card">
             <h3>Student-wise assessment history (પાનું {report.page})</h3>
             <div className="scroll dash-scroll"><table className="dash-table">
-              <thead><tr><th>સાચવેલ સમય</th><th>Month</th><th className="left">શાળા</th><th className="left">વિદ્યાર્થી / ID</th><th>ધોરણ</th><th>સ્થિતિ</th><th>હા/કુલ</th><th className="wide">જવાબો</th></tr></thead>
+              <thead><tr><th>સાચવેલ સમય / Saved Time</th><th>Month</th><th className="left">શાળા</th><th className="left">વિદ્યાર્થી / ID</th><th>ધોરણ</th><th>સ્થિતિ</th><th>હા/કુલ / Yes / Total</th><th className="wide">જવાબો / Answers</th></tr></thead>
               <tbody>{report.entries.map((item) => {
                 const ans = Object.entries(item.answers || {}).filter(([, value]) => typeof value === 'boolean');
                 return (
@@ -384,18 +384,18 @@ export default function AdminReports({ supabase, profile }) {
               })}</tbody>
             </table></div>
             <div className="row between no-print">
-              <button disabled={busy || page <= 1} onClick={() => setPage((current) => current - 1)}>← પાછળનું</button>
+              <button disabled={busy || page <= 1} onClick={() => setPage((current) => current - 1)}>← પાછળનું / ← Previous</button>
               <span className="muted">શાળા {report.schoolPage}/{report.schoolPageCount} · Entry {report.page}/{report.entryPageCount} · Pending {report.pendingPage}/{report.pendingPageCount}</span>
-              <button disabled={busy || (page >= report.schoolPageCount && page >= report.entryPageCount && page >= report.pendingPageCount)} onClick={() => setPage((current) => current + 1)}>આગળનું →</button>
+              <button disabled={busy || (page >= report.schoolPageCount && page >= report.entryPageCount && page >= report.pendingPageCount)} onClick={() => setPage((current) => current + 1)}>આગળનું → / Next →</button>
             </div>
-            <p className="muted">લીલા = હા, લાલ = ના (વિધાન નંબર).</p>
+            <p className="muted">લીલા = હા, લાલ = ના (વિધાન નંબર). / Green = Yes, Red = No (statement number).</p>
           </div>
 
           {(applied.status === 'all' || applied.status === 'pending') && (
             <div className="card dash-card">
               <h3>Pending assessment students</h3>
               {report.pendingStudents.length ? <div className="scroll dash-scroll"><table className="dash-table">
-                <thead><tr><th>School ID</th><th className="left">શાળા</th><th className="left">જિલ્લો</th><th className="left">બ્લોક</th><th>ધોરણ</th><th className="left">વિદ્યાર્થી</th><th>Student ID</th></tr></thead>
+                <thead><tr><th>School ID</th><th className="left">શાળા</th><th className="left">જિલ્લો / District</th><th className="left">બ્લોક / Block</th><th>ધોરણ</th><th className="left">વિદ્યાર્થી</th><th>Student ID</th></tr></thead>
                 <tbody>{report.pendingStudents.map((student) => <tr key={`${student.schoolCode}:${student.studentId}:${student.dhoran}`}>
                   <td>{student.schoolCode}</td><td className="left">{student.schoolName}</td><td className="left">{student.district}</td>
                   <td className="left">{student.block}</td><td>{CLASSES[student.dhoran]?.label || student.dhoran}</td>
@@ -413,7 +413,7 @@ export default function AdminReports({ supabase, profile }) {
 function SchoolRows({ rows }) {
   return (
     <div className="scroll dash-scroll"><table className="dash-table">
-      <thead><tr><th>કોડ</th><th className="left">શાળા</th><th className="left">જિલ્લો</th><th className="left">તાલુકો</th><th>નોંધાયેલા</th><th>મૂલ્યાંકન થયેલા</th><th>Assessment records</th><th>પૂર્ણ</th><th>અપૂર્ણ</th><th>Pending</th><th className="wide">પ્રગતિ</th></tr></thead>
+      <thead><tr><th>કોડ / Code</th><th className="left">શાળા</th><th className="left">જિલ્લો / District</th><th className="left">તાલુકો / Block</th><th>નોંધાયેલા / Enrolled</th><th>મૂલ્યાંકન થયેલા / Assessed</th><th>Assessment records</th><th>પૂર્ણ / Complete</th><th>અપૂર્ણ / Incomplete</th><th>Pending</th><th className="wide">પ્રગતિ / Progress</th></tr></thead>
       <tbody>{rows.map((item) => (
         <tr key={item.schoolId}>
           <td>{item.schoolCode}</td><td className="left">{item.schoolName}</td>

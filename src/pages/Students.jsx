@@ -367,57 +367,57 @@ export default function Students({ supabase, school, dhoran: dhoranProp }) {
             {sheet.parsed.list.length === 0 ? (
               <p className="muted">આ શાળાનો (SchoolId {school.code}) કોઈ વિદ્યાર્થી ફાઈલમાં મળ્યો નથી.</p>
             ) : (
-              <button className="primary" disabled={busy} onClick={doImportStandard}>ઇમ્પોર્ટ કરો</button>
+              <button className="primary" disabled={busy} onClick={doImportStandard}>ઇમ્પોર્ટ કરો / Import</button>
             )}
           </>
         )}
 
         {sheet && !sheet.standard && (
           <>
-            <p className="muted">આ ફાઈલ પોર્ટલના ફોર્મેટની નથી, એટલે કૉલમ જાતે પસંદ કરો.</p>
-            <ColumnSelect field="name" label="નામ કૉલમ" />
-            <ColumnSelect field="reg" label="રજીસ્ટર નં. કૉલમ" optional />
-            <ColumnSelect field="dhoran" label="ધોરણ કૉલમ" optional />
+            <p className="muted">આ ફાઈલ પોર્ટલના ફોર્મેટની નથી, એટલે કૉલમ જાતે પસંદ કરો. / This file is not in the portal format, so choose the columns manually.</p>
+            <ColumnSelect field="name" label="નામ કૉલમ / Name column" />
+            <ColumnSelect field="reg" label="રજીસ્ટર નં. કૉલમ / Register no. column" optional />
+            <ColumnSelect field="dhoran" label="ધોરણ કૉલમ / Class column" optional />
             <ColumnSelect field="school" label="School ID કૉલમ" optional />
             <p className="muted">ઉદાહરણ: {sheet.rows.slice(0, 3).map((row) => String(row[map.name] ?? '')).join(' | ')}</p>
-            <button className="primary" disabled={busy} onClick={doImportGeneric}>ઇમ્પોર્ટ કરો</button>
+            <button className="primary" disabled={busy} onClick={doImportGeneric}>ઇમ્પોર્ટ કરો / Import</button>
           </>
         )}
       </details>
 
       <div className="card">
-        <h3>એક વિદ્યાર્થી ઉમેરો</h3>
-        <input placeholder="વિદ્યાર્થીનું નામ" value={name} onChange={(event) => setName(event.target.value)} />
-        <input placeholder="રજીસ્ટર નં. (વૈકલ્પિક)" value={reg} onChange={(event) => setReg(event.target.value)} />
-        <button className="primary" onClick={add}>ઉમેરો</button>
+        <h3>એક વિદ્યાર્થી ઉમેરો / Add one student</h3>
+        <input placeholder="વિદ્યાર્થીનું નામ / Student Name" value={name} onChange={(event) => setName(event.target.value)} />
+        <input placeholder="રજીસ્ટર નં. (વૈકલ્પિક) / Register no. (optional)" value={reg} onChange={(event) => setReg(event.target.value)} />
+        <button className="primary" onClick={add}>ઉમેરો / Add</button>
       </div>
 
-      {!students ? <p>વિદ્યાર્થી લોડ થાય છે…</p> : (
+      {!students ? <p>વિદ્યાર્થી લોડ થાય છે… / Loading students…</p> : (
         <>
           <div className="card row">
             <input
-              aria-label="વિદ્યાર્થી શોધો"
-              placeholder="નામ / રજીસ્ટર નં. શોધો"
+              aria-label="વિદ્યાર્થી શોધો / Search students"
+              placeholder="નામ / રજીસ્ટર નં. શોધો / Search name / register no."
               value={search}
               onChange={(event) => { setSearch(event.target.value); setListPage(1); }}
             />
             <span className="muted">{filtered.length} / {students.length}</span>
           </div>
-          {!students.length && !error && <p className="muted">આ ધોરણમાં હજી કોઈ વિદ્યાર્થી નથી.</p>}
-          {!!students.length && !filtered.length && <p className="muted">શોધ મુજબ કોઈ વિદ્યાર્થી મળ્યો નથી.</p>}
+          {!students.length && !error && <p className="muted">આ ધોરણમાં હજી કોઈ વિદ્યાર્થી નથી. / No students in this class yet.</p>}
+          {!!students.length && !filtered.length && <p className="muted">શોધ મુજબ કોઈ વિદ્યાર્થી મળ્યો નથી. / No student matches the search.</p>}
           <ul className="list">
             {visible.map((student, index) => (
               <li key={student.id}>
                 <span>{(currentPage - 1) * PAGE_SIZE + index + 1}. {student.name} {student.reg && <small>({student.reg})</small>}</span>
-                <button className="link" onClick={() => remove(student)}>કાઢો</button>
+                <button className="link" onClick={() => remove(student)}>કાઢો / Remove</button>
               </li>
             ))}
           </ul>
           {pageCount > 1 && (
             <div className="row between">
-              <button disabled={currentPage <= 1} onClick={() => setListPage(currentPage - 1)}>← પાછળનું</button>
+              <button disabled={currentPage <= 1} onClick={() => setListPage(currentPage - 1)}>← પાછળનું / ← Previous</button>
               <span className="muted">પાનું {currentPage}/{pageCount}</span>
-              <button disabled={currentPage >= pageCount} onClick={() => setListPage(currentPage + 1)}>આગળનું →</button>
+              <button disabled={currentPage >= pageCount} onClick={() => setListPage(currentPage + 1)}>આગળનું → / Next →</button>
             </div>
           )}
         </>

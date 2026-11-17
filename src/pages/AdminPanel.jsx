@@ -100,9 +100,9 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
 
   const addSchoolForm = (
     <form className="card" onSubmit={saveSchool}>
-      <label>જિલ્લો<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
+      <label>જિલ્લો / District<input required value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label>
       <label>
-        તાલુકો પસંદ કરો અથવા નવો દાખલ કરો
+        તાલુકો પસંદ કરો અથવા નવો દાખલ કરો / Select a Block or enter a new one
         <input required list="fln-taluka-options" value={form.block} onChange={(e) => setForm({ ...form, block: e.target.value })} />
         <datalist id="fln-taluka-options">
           {[...new Set(schools.map((school) => school.block.trim()).filter(Boolean))].map((block) => (
@@ -110,12 +110,12 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           ))}
         </datalist>
       </label>
-      <label>ક્લસ્ટર<input value={form.cluster} onChange={(e) => setForm({ ...form, cluster: e.target.value })} /></label>
+      <label>ક્લસ્ટર / Cluster<input value={form.cluster} onChange={(e) => setForm({ ...form, cluster: e.target.value })} /></label>
       <label>શાળા કોડ / School ID<input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></label>
-      <label>શાળાનું નામ<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+      <label>શાળાનું નામ / School Name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
       <div className="row">
         <button className="primary" disabled={busy}>{busy ? 'સાચવાય છે…' : 'શાળા ઉમેરો'}</button>
-        <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો</button>
+        <button type="button" onClick={clearForm}>ફોર્મ સાફ કરો / Clear Form</button>
       </div>
     </form>
   );
@@ -156,8 +156,8 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           <details className="tool">
             <summary>
               <span className="tool-ico" aria-hidden="true">＋</span>
-              <b>નવી શાળા ઉમેરો</b>
-              <small>એક શાળા જાતે ઉમેરો</small>
+              <b>નવી શાળા ઉમેરો / Add New School</b>
+              <small>એક શાળા જાતે ઉમેરો / Add one school manually</small>
               <i className="tool-chev" aria-hidden="true">⌄</i>
             </summary>
             <div className="tool-body">{addSchoolForm}</div>
@@ -165,8 +165,8 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           <details className="tool">
             <summary>
               <span className="tool-ico" aria-hidden="true">🔎</span>
-              <b>તપાસ: શાળા ↔ વિદ્યાર્થી</b>
-              <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી</small>
+              <b>તપાસ: શાળા ↔ વિદ્યાર્થી / Check: Schools ↔ Students</b>
+              <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી / Schools without students and students without a school</small>
               <i className="tool-chev" aria-hidden="true">⌄</i>
             </summary>
             <div className="tool-body"><DataCheck supabase={supabase} focus="school" /></div>
@@ -174,8 +174,8 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           <details className="tool">
             <summary>
               <span className="tool-ico" aria-hidden="true">🗑</span>
-              <b>શાળા કાઢો</b>
-              <small>શાળા શોધો, કાઢો અથવા પાછી ચાલુ કરો</small>
+              <b>શાળા કાઢો / Remove School</b>
+              <small>શાળા શોધો, કાઢો અથવા પાછી ચાલુ કરો / Search, remove or restore a school</small>
               <i className="tool-chev" aria-hidden="true">⌄</i>
             </summary>
             <div className="tool-body"><SchoolRemovePanel supabase={supabase} viaFunction={false} onChanged={loadSchools} /></div>
@@ -187,8 +187,8 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
         <details className="tool">
           <summary>
             <span className="tool-ico" aria-hidden="true">🔎</span>
-            <b>તપાસ: વિદ્યાર્થી ↔ શાળા</b>
-            <small>શાળા વગરના વિદ્યાર્થી અને વિદ્યાર્થી વગરની શાળા</small>
+            <b>તપાસ: વિદ્યાર્થી ↔ શાળા / Check: Students ↔ Schools</b>
+            <small>શાળા વગરના વિદ્યાર્થી અને વિદ્યાર્થી વગરની શાળા / Students without a school and schools without students</small>
             <i className="tool-chev" aria-hidden="true">⌄</i>
           </summary>
           <div className="tool-body"><DataCheck supabase={supabase} focus="student" /></div>
@@ -253,9 +253,9 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTa
     <section className="card">
       <h3>Student અને Assessment Workspace</h3>
       <label>
-        શાળા પસંદ કરો
+        શાળા પસંદ કરો / Select School
         <select value={schoolId} onChange={(event) => leaveEntry(() => setSchoolId(event.target.value))}>
-          <option value="">— શાળા પસંદ કરો —</option>
+          <option value="">— શાળા પસંદ કરો — / — Select School —</option>
           {schools.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name} · {item.code}{item.active ? '' : ' (નિષ્ક્રિય)'}
@@ -271,7 +271,7 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTa
                 <option key={key} value={key}>{item.label}</option>
               ))}
             </select>
-            <select aria-label="માસ" value={month} onChange={(event) => leaveEntry(() => setMonth(event.target.value))}>
+            <select aria-label="માસ / Month" value={month} onChange={(event) => leaveEntry(() => setMonth(event.target.value))}>
               {MONTHS.map((item) => (
                 <option key={item.key} value={item.key}>{item.label}</option>
               ))}
@@ -280,7 +280,7 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTa
           <nav>
             <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>વિદ્યાર્થી</button>
             <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>એન્ટ્રી</button>
-            <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>રિપોર્ટ</button>
+            <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>રિપોર્ટ / Report</button>
           </nav>
           {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
           {tab === 'entry' && <Entry

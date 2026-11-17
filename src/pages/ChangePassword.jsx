@@ -64,7 +64,7 @@ export default function ChangePassword({ supabase, school, profile, onComplete, 
         {error && <p className="error" role="alert">{error}</p>}
         <div className="row">
           <button className="primary" disabled={busy}>{busy ? 'Password બદલાઈ રહ્યો છે…' : 'Password બદલો'}</button>
-          <button type="button" disabled={busy} onClick={onSignOut}>લૉગઆઉટ</button>
+          <button type="button" disabled={busy} onClick={onSignOut}>લૉગઆઉટ / Logout</button>
         </div>
       </form>
     </main>

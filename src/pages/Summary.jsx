@@ -214,16 +214,16 @@ export default function Summary({
         {isAdmin && (
           <>
             <label>
-              જિલ્લો
+              જિલ્લો / District
               <select value={districtSel} onChange={(event) => { setDistrictSel(event.target.value); setBlockSel(''); setSelectedSchoolId('all'); }}>
-                <option value="">બધા જિલ્લા</option>
+                <option value="">બધા જિલ્લા / All Districts</option>
                 {districtOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </label>
             <label>
-              બ્લોક
+              બ્લોક / Block
               <select value={blockSel} onChange={(event) => { setBlockSel(event.target.value); setSelectedSchoolId('all'); }}>
-                <option value="">બધા બ્લોક</option>
+                <option value="">બધા બ્લોક / All Blocks</option>
                 {blockOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </label>
@@ -239,12 +239,12 @@ export default function Summary({
         <label>
           ધોરણ
           <select value={selectedGrade} onChange={(event) => setSelectedGrade(event.target.value)}>
-            <option value="all">બધા ધોરણ</option>
+            <option value="all">બધા ધોરણ / All Classes</option>
             {Object.entries(CLASSES).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}
           </select>
         </label>
         <label>
-          માસ
+          માસ / Month
           <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
             {MONTHS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
@@ -314,7 +314,7 @@ export default function Summary({
               <p className="muted">{selectedSchool.name} · {selectedSchool.code} · {selectedSchool.block}, {selectedSchool.district}</p>
             )}
             {gradeStudents.length === 0 ? (
-              <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી</p>
+              <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી / No data available yet</p>
             ) : (
               <>
                 <GradeInsight
@@ -333,17 +333,17 @@ export default function Summary({
                   skills={gradeSkills}
                 />
                 <div className="summary-counts">
-                  <div><span>કુલ નોંધાયેલા</span><b>{gradeStudents.length}</b></div>
-                  <div><span>સાચવેલી એન્ટ્રી</span><b>{gradeEntries.length}</b></div>
-                  <div><span>પૂર્ણ એન્ટ્રી</span><b>{done}</b></div>
-                  <div><span>અપૂર્ણ એન્ટ્રી</span><b>{partial}</b></div>
-                  <div><span>બાકી</span><b>{pending}</b></div>
+                  <div><span>કુલ નોંધાયેલા / Total Enrolled</span><b>{gradeStudents.length}</b></div>
+                  <div><span>સાચવેલી એન્ટ્રી / Entries Saved</span><b>{gradeEntries.length}</b></div>
+                  <div><span>પૂર્ણ એન્ટ્રી / Complete Entries</span><b>{done}</b></div>
+                  <div><span>અપૂર્ણ એન્ટ્રી / Incomplete Entries</span><b>{partial}</b></div>
+                  <div><span>બાકી / Pending</span><b>{pending}</b></div>
                   <div><span>ગેરહાજર</span><b>{absent}</b></div>
                 </div>
 
                 {isAdmin && selectedSchoolId === 'all' && (
                   <>
-                    <h3>શાળા પ્રમાણે સરખામણી</h3>
+                    <h3>શાળા પ્રમાણે સરખામણી / School-wise Comparison</h3>
                     <div className="scroll">
                       <table className="report-table">
                         <thead>
@@ -377,13 +377,13 @@ export default function Summary({
                 )}
 
                 {gradeEntries.length === 0 ? (
-                  <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી</p>
+                  <p className="muted">હજુ ડેટા ઉપલબ્ધ નથી / No data available yet</p>
                 ) : (
                   <>
-                    <h3>વિધાન / કૌશલ્ય પ્રમાણે પરિણામ</h3>
+                    <h3>વિધાન / કૌશલ્ય પ્રમાણે પરિણામ / Result by Statement / Skill</h3>
                     <div className="scroll">
                       <table className="report-table">
-                        <thead><tr><th>#</th><th>ક્ષેત્ર</th><th>વિધાન</th><th>હા</th><th>જવાબ આપેલા</th><th>હા %</th></tr></thead>
+                        <thead><tr><th>#</th><th>ક્ષેત્ર / Area</th><th>વિધાન / Statement</th><th>હા / Yes</th><th>જવાબ આપેલા / Answered</th><th>હા % / Yes %</th></tr></thead>
                         <tbody>
                           {gradeSkills.map((item) => (
                             <tr key={item.number}>
@@ -397,10 +397,10 @@ export default function Summary({
                   </>
                 )}
 
-                <h3>વિદ્યાર્થી-વાર પરિણામ</h3>
+                <h3>વિદ્યાર્થી-વાર પરિણામ / Student-wise Result</h3>
                 <div className="scroll">
                   <table className="report-table">
-                    <thead><tr><th>#</th><th>શાળા</th><th>વિદ્યાર્થી</th><th>જવાબ</th><th>કુલ</th><th>પરિણામ</th><th>સ્થિતિ</th></tr></thead>
+                    <thead><tr><th>#</th><th>શાળા</th><th>વિદ્યાર્થી</th><th>જવાબ / Answer</th><th>કુલ / Total</th><th>પરિણામ / Result</th><th>સ્થિતિ</th></tr></thead>
                     <tbody>
                       {results.map(({ student, entry, result }, index) => (
                         <tr key={student.id}>
@@ -480,17 +480,17 @@ function SchoolLedger({ school, dhoran, students, entries }) {
         <button onClick={() => window.print()}>PDF / પ્રિન્ટ</button>
       </div>
       <div className="fields">
-        <div>શાળા: <b>{school.name}</b> ({school.code})</div>
-        <div>તાલુકો: <b>{school.block}</b></div>
-        <div>જિલ્લો: <b>{school.district}</b></div>
-        <label>વર્ગ શિક્ષકનું નામ: <input value={teacher} onChange={(event) => updateTeacher(event.target.value)} /></label>
-        <div>ધોરણ: <b>{grade.label}</b></div>
+        <div>શાળા: / School: <b>{school.name}</b> ({school.code})</div>
+        <div>તાલુકો: / Block: <b>{school.block}</b></div>
+        <div>જિલ્લો: / District: <b>{school.district}</b></div>
+        <label>વર્ગ શિક્ષકનું નામ: / Class Teacher Name: <input value={teacher} onChange={(event) => updateTeacher(event.target.value)} /></label>
+        <div>ધોરણ: / Class: <b>{grade.label}</b></div>
       </div>
       {teacherError && <p className="error" role="alert">{teacherError}</p>}
       <div className="scroll">
         <table className="ledger">
           <thead>
-            <tr><th>ક્રમ</th><th>માસનું નામ</th><th>રજીસ્ટર</th><th>ઉદયમાન</th><th>પ્રગતિશીલ</th><th>નિપુણ</th><th>FLN સિદ્ધિ %</th></tr>
+            <tr><th>ક્રમ</th><th>માસનું નામ</th><th>રજીસ્ટર / Register</th><th>ઉદયમાન</th><th>પ્રગતિશીલ</th><th>નિપુણ</th><th>FLN સિદ્ધિ %</th></tr>
           </thead>
           <tbody>
             {rows.map((row) => (

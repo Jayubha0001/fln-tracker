@@ -22,6 +22,13 @@ export function getCategory(dhoran, yesCount) {
   return 'P';
 }
 
+const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// '2026-11' -> 'Nov-26'
+export const monthEn = (key) => {
+  const [year, month] = String(key).split('-');
+  return EN_MONTHS[Number(month) - 1] ? `${EN_MONTHS[Number(month) - 1]}-${String(year).slice(2)}` : String(key);
+};
+
 export const MONTHS = [
   { key: '2026-07', label: 'જુલાઈ-26' },
   { key: '2026-08', label: 'ઓગસ્ટ-26' },

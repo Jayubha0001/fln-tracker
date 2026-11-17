@@ -216,7 +216,7 @@ export default function AdminStudentImport({ supabase, schoolsLoaded }) {
         Excel અથવા CSV ફાઇલ
         <input type="file" accept=".xlsx,.xls,.csv" disabled={busy || !schoolsLoaded} onChange={onFileChange} />
       </label>
-      {busy && <p className="muted">ફાઈલ/ડેટા તપાસાઈ રહ્યા છે…</p>}
+      {busy && <p className="muted">ફાઈલ/ડેટા તપાસાઈ રહ્યા છે… / Checking file / data…</p>}
 
       {preview && (
         <>

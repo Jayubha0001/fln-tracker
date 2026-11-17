@@ -171,7 +171,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
   }
 
   if (!students || !entries) {
-    return <div>{error ? <p className="error" role="alert">{error}</p> : <p>લોડ થાય છે…</p>}</div>;
+    return <div>{error ? <p className="error" role="alert">{error}</p> : <p>લોડ થાય છે… / Loading…</p>}</div>;
   }
   if (!students.length) return <p>પહેલા "વિદ્યાર્થી" ટેબમાં વિદ્યાર્થી ઉમેરો.</p>;
 
@@ -247,7 +247,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
           </div>
         </div>
         <label className="assessment-date">
-          મૂલ્યાંકન તારીખ
+          મૂલ્યાંકન તારીખ / Assessment Date
           <input
             type="date"
             value={assessmentDate}
@@ -265,15 +265,15 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
       <div className="entry-default">
         <label>
           <input type="checkbox" checked={defaultYes} onChange={(event) => toggleDefaultYes(event.target.checked)} />
-          <span><b>બધા ✓ પહેલેથી પસંદ</b> (નવા વિદ્યાર્થી માટે) — ખોટા હોય તે જ ✗ કરો</span>
+          <span><b>બધા ✓ પહેલેથી પસંદ / All ✓ pre-selected</b> (નવા વિદ્યાર્થી માટે) — ખોટા હોય તે જ ✗ કરો / (for new students) — mark only the wrong ones ✗</span>
         </label>
-        <span className="entry-wrong" title="આ વર્ગમાં ✗ (ના) તરીકે ચિહ્નિત વિધાન">✗ ખોટા: <b>{wrongCount}</b></span>
+        <span className="entry-wrong" title="આ વર્ગમાં ✗ (ના) તરીકે ચિહ્નિત વિધાન / Statements marked ✗ (No) in this class">✗ ખોટા: / ✗ Wrong: <b>{wrongCount}</b></span>
       </div>
 
       <div className="entry-modes" role="tablist">
-        <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}><b>▦ ફોટો મુજબ ગ્રીડ</b><small>સૌથી ઝડપી · આખો વર્ગ</small></button>
-        <button className={view === 'skill' ? 'on' : ''} onClick={() => setView('skill')}><b>🎯 વિધાન પ્રમાણે</b><small>એક વિધાન, આખો વર્ગ</small></button>
-        <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}><b>👤 વિદ્યાર્થી પ્રમાણે</b><small>એક વિદ્યાર્થી, બધા વિધાન</small></button>
+        <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}><b>▦ ફોટો મુજબ ગ્રીડ / ▦ Photo-style Grid</b><small>સૌથી ઝડપી · આખો વર્ગ / Fastest · Whole class</small></button>
+        <button className={view === 'skill' ? 'on' : ''} onClick={() => setView('skill')}><b>🎯 વિધાન પ્રમાણે / 🎯 By Statement</b><small>એક વિધાન, આખો વર્ગ / One statement, whole class</small></button>
+        <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}><b>👤 વિદ્યાર્થી પ્રમાણે / 👤 By Student</b><small>એક વિદ્યાર્થી, બધા વિધાન / One student, all statements</small></button>
       </div>
 
       {view === 'grid' && (
@@ -285,7 +285,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
       {view === 'card' && (
         <>
           <div className="entry-filter">
-            <input placeholder="🔍 વિદ્યાર્થી શોધો…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input placeholder="🔍 વિદ્યાર્થી શોધો… / 🔍 Search student…" value={q} onChange={(e) => setQ(e.target.value)} />
             {[['all', 'બધા'], ['todo', 'બાકી'], ['done', 'પૂર્ણ']].map(([key, label]) => (
               <button key={key} className={filter === key ? 'on' : ''} onClick={() => setFilter(key)}>{label}</button>
             ))}
@@ -310,7 +310,7 @@ export default function Entry({ supabase, school, dhoran, month, onDirtyChange }
                 </li>
               );
             })}
-            {!shown.length && <li className="muted">કોઈ વિદ્યાર્થી મળ્યો નથી.</li>}
+            {!shown.length && <li className="muted">કોઈ વિદ્યાર્થી મળ્યો નથી. / No student found.</li>}
           </ul>
         </>
       )}
@@ -358,7 +358,7 @@ function SkillView({ students, byStudent, dhoran, onChange, onSetAbsent, saving 
         <p><b>{idx + 1}.</b> {st.text}</p>
         <div className="skill-count"><span className="y">હા {yes}</span><span className="n">ના {no}</span><span>બાકી {present.length - yes - no}</span><span>ગેરહાજર {students.length - present.length}</span></div>
         <div className="row">
-          <button disabled={saving} onClick={() => setAll(true)}>બધા ✓</button>
+          <button disabled={saving} onClick={() => setAll(true)}>બધા ✓ / All ✓</button>
         </div>
       </div>
       <ul className="skill-students">
@@ -370,16 +370,16 @@ function SkillView({ students, byStudent, dhoran, onChange, onSetAbsent, saving 
               <span>{i + 1}. {student.name}</span>
               <button type="button" className={`mini abs${away ? ' on' : ''}`} disabled={saving} onClick={() => onSetAbsent(student.id, !away)}>{away ? '☑ ગેરહાજર' : '☐ ગેરહાજર'}</button>
               {!away && <div className="yn">
-                <button className={v === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(student, true)}>હા</button>
-                <button className={v === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(student, false)}>ના</button>
+                <button className={v === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(student, true)}>હા / Yes</button>
+                <button className={v === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(student, false)}>ના / No</button>
               </div>}
             </li>
           );
         })}
       </ul>
       <div className="row sticky">
-        <button onClick={() => setIdx(Math.max(0, idx - 1))} disabled={idx === 0}>← પાછળ</button>
-        <button className="primary" onClick={() => setIdx(Math.min(list.length - 1, idx + 1))} disabled={idx === list.length - 1}>આગળનું વિધાન →</button>
+        <button onClick={() => setIdx(Math.max(0, idx - 1))} disabled={idx === 0}>← પાછળ / ← Back</button>
+        <button className="primary" onClick={() => setIdx(Math.min(list.length - 1, idx + 1))} disabled={idx === list.length - 1}>આગળનું વિધાન → / Next statement →</button>
       </div>
     </div>
   );
@@ -491,13 +491,17 @@ function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
         </div>
         {canSplit && (
           <div className="seg">
-            <button className={part === 'all' ? 'on' : ''} onClick={() => setPart('all')}>બધા</button>
+            <button className={part === 'all' ? 'on' : ''} onClick={() => setPart('all')}>બધા / All</button>
             <button className={part === '1' ? 'on' : ''} onClick={() => setPart('1')}>ભાગ 1 (1–{splitAt})</button>
             <button className={part === '2' ? 'on' : ''} onClick={() => setPart('2')}>ભાગ 2 ({splitAt + 1}–{full.length})</button>
           </div>
         )}
       </div>
-      <p className="muted">ખાનામાં ટેપ: ખાલી → ✓ (હા) → ✗ (ના) → ખાલી. કીબોર્ડ: ← ↑ ↓ → ફરો · <b>Y / 1</b> = ✓ · <b>N / 0</b> = ✗ · Del = ખાલી (આપમેળે આગળના ખાનામાં જાય). આખી કૉલમ માટે ઉપરનું "✓", આખી લાઇન માટે "બધા ✓".</p>
+      <p className="muted">
+        ખાનામાં ટેપ: ખાલી → ✓ (હા) → ✗ (ના) → ખાલી. કીબોર્ડ: ← ↑ ↓ → ફરો · <b>Y / 1</b> = ✓ · <b>N / 0</b> = ✗ · Del = ખાલી (આપમેળે આગળના ખાનામાં જાય). આખી કૉલમ માટે ઉપરનું "✓", આખી લાઇન માટે "બધા ✓".
+        <br />
+        Tap a cell: empty → ✓ (Yes) → ✗ (No) → empty. Keyboard: arrow keys to move · <b>Y / 1</b> = ✓ · <b>N / 0</b> = ✗ · Del = clear (moves to the next cell). Whole column: the “✓” on top; whole row: “All ✓”.
+      </p>
       {selected && (
         <div className={`qbox lv-${selected.level}`} onClick={() => setSelected(null)}>
           <b>{numOf(selected)}.</b> {selected.text} <small>({selected.area} · {LEVEL_LABEL[selected.level]})</small>
@@ -508,15 +512,15 @@ function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
           <thead>
             <tr className="r1">
               <th className="srno" rowSpan="6">ક્રમ</th>
-              <th className="stick">ક્ષેત્ર</th>
+              <th className="stick">ક્ષેત્ર / Area</th>
               <th rowSpan="6" className="abs-h">ગેરહાજર</th>
               {areaGroups.map((group) => (
                 <th key={group.key} colSpan={group.span} rowSpan={group.key === NO_STEP_AREA ? 2 : 1}>{group.key}</th>
               ))}
-              <th rowSpan="6">બધા</th><th rowSpan="6">હા</th><th rowSpan="6">પરિણામ</th>
+              <th rowSpan="6">બધા / All</th><th rowSpan="6">હા / Yes</th><th rowSpan="6">પરિણામ / Result</th>
             </tr>
             <tr className="r2">
-              <th className="stick">માર્ગદર્શિકામાં સંલગ્ન પગલાનો ક્રમ</th>
+              <th className="stick">માર્ગદર્શિકામાં સંલગ્ન પગલાનો ક્રમ / Step order in the guideline</th>
               {list.filter((statement) => statement.area !== NO_STEP_AREA).map((statement) => (
                 <th key={statement.n}>પગલું {STEP[statement.n]}</th>
               ))}
@@ -528,7 +532,7 @@ function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
               ))}
             </tr>
             <tr className="vrow">
-              <th className="stick">વિધાન</th>
+              <th className="stick">વિધાન / Statement</th>
               {list.map((statement) => (
                 <th key={statement.n} className={`lv-${statement.level} qh`} onClick={() => setSelected(statement)}>
                   <div className="vt">{statement.text}</div>
@@ -536,11 +540,11 @@ function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
               ))}
             </tr>
             <tr className="nrow">
-              <th className="stick">વિદ્યાર્થીનું નામ / વિધાન નંબર →</th>
+              <th className="stick">વિદ્યાર્થીનું નામ / વિધાન નંબર → / Student name / Statement no. →</th>
               {list.map((statement) => <th key={statement.n} className={`lv-${statement.level}`}>{numOf(statement)}</th>)}
             </tr>
             <tr className="frow">
-              <th className="stick">આખી કૉલમ ભરો ↓</th>
+              <th className="stick">આખી કૉલમ ભરો ↓ / Fill whole column ↓</th>
               {list.map((statement) => (
                 <th key={statement.n}>
                   {(() => {
@@ -590,7 +594,7 @@ function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
                       aria-pressed={rowAllYes(answers)}
                       disabled={saving || away}
                       onClick={() => (rowAllYes(answers) ? onChange(student.id, {}) : allYes(student))}
-                    >બધા ✓</button>
+                    >બધા ✓ / All ✓</button>
                   </td>
                   <td className="num">{away ? '—' : `${status.yes}/${status.total}`}</td>
                   <td>
@@ -607,7 +611,7 @@ function Grid({ students, byStudent, dhoran, onChange, onSetAbsent, saving }) {
         </table>
       </div>
       <details className="card">
-        <summary>વિધાન યાદી (નંબર મુજબ)</summary>
+        <summary>વિધાન યાદી (નંબર મુજબ) / Statement list (by number)</summary>
         <ol className="stlist">
           {full.map((statement, index) => (
             <li key={statement.n} value={index + 1} className={`lv-${statement.level}`}>
@@ -639,22 +643,22 @@ function StudentForm({ student, index, count, dhoran, answers, onChange, onSetAb
     <div className="sform">
       <div className="sform-head">
         <div className="row between">
-          <button className="link" onClick={onClose}>← યાદી</button>
+          <button className="link" onClick={onClose}>← યાદી / ← List</button>
           <span className="muted">{index + 1} / {count}</span>
         </div>
         <h2>{student.name}</h2>
         <div className="dash-bar big"><i className="n" style={{ width: `${(status.done / status.total) * 100}%` }} /></div>
         <div className="row between">
           <span>ભર્યા {status.done}/{status.total} · હા <b>{status.yes}</b></span>
-          {status.cat ? <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label}</span> : <span className="muted">(બધા વિધાન ભરો)</span>}
+          {status.cat ? <span className={`badge ${CAT[status.cat].cls}`}>{CAT[status.cat].label}</span> : <span className="muted">(બધા વિધાન ભરો) / (fill all statements)</span>}
         </div>
         <div className="row">
-          <button className="primary" disabled={saving} onClick={allYes}>બધા હા</button>
-          <button disabled={saving} onClick={clear}>બધું સાફ</button>
+          <button className="primary" disabled={saving} onClick={allYes}>બધા હા / All Yes</button>
+          <button disabled={saving} onClick={clear}>બધું સાફ / Clear all</button>
           <button type="button" className={`mini abs${away ? ' on' : ''}`} disabled={saving} onClick={() => onSetAbsent(!away)}>{away ? '☑ ગેરહાજર' : '☐ ગેરહાજર'}</button>
         </div>
       </div>
-      {away && <p className="muted">આ વિદ્યાર્થી ગેરહાજર છે; આ માસ માટે કોઈ વિધાન ભરવાના નથી. સાચવવા માટે નીચે 💾 દબાવો.</p>}
+      {away && <p className="muted">આ વિદ્યાર્થી ગેરહાજર છે; આ માસ માટે કોઈ વિધાન ભરવાના નથી. સાચવવા માટે નીચે 💾 દબાવો. / This student is absent; no statements are needed for this month. Press 💾 below to save.</p>}
 
       {!away && areas.map((group) => {
         const items = list.slice(cursor, cursor + group.span);
@@ -669,8 +673,8 @@ function StudentForm({ student, index, count, dhoran, answers, onChange, onSetAb
                 <div className={`stmt lv-${statement.level} ${value === true ? 'is-yes' : value === false ? 'is-no' : ''}`} key={statement.n}>
                   <div><b>{start + i + 1}.</b> {statement.text}</div>
                   <div className="yn">
-                    <button className={value === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(statement.n, true)}>✓ હા</button>
-                    <button className={value === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(statement.n, false)}>✗ ના</button>
+                    <button className={value === true ? 'yes on' : 'yes'} disabled={saving} onClick={() => set(statement.n, true)}>✓ હા / ✓ Yes</button>
+                    <button className={value === false ? 'no on' : 'no'} disabled={saving} onClick={() => set(statement.n, false)}>✗ ના / ✗ No</button>
                   </div>
                 </div>
               );
@@ -680,7 +684,7 @@ function StudentForm({ student, index, count, dhoran, answers, onChange, onSetAb
       })}
 
       <div className="row sticky">
-        <button onClick={onPrev} disabled={index === 0}>← પાછળ</button>
+        <button onClick={onPrev} disabled={index === 0}>← પાછળ / ← Back</button>
         <button disabled={!Object.keys(answers).length || saving} onClick={onSave}>{saving ? 'સાચવાય છે…' : '💾 સાચવો'}</button>
         <button className="primary" onClick={onNext}>{index === count - 1 ? 'પૂર્ણ' : 'આગળ →'}</button>
       </div>
