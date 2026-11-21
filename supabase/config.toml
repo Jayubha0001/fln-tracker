@@ -18,3 +18,6 @@ verify_jwt = true
 
 [functions.scoped-school-management]
 verify_jwt = true
+
+[functions.fln-api]
+verify_jwt = true

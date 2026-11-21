@@ -5,7 +5,7 @@ import { sumGradeMonth } from './scopeYearReport.js';
 // Central team mate: darek header Gujarati + English.
 export const GRADES = ['B', '1', '2'];
 export const GRADE_NAMES = { B: ['બાલવાટિકા', 'Balvatika'], '1': ['ધોરણ 1', 'Std 1'], '2': ['ધોરણ 2', 'Std 2'] };
-const MONTH_EN = {
+export const MONTH_EN = {
   '2026-06': 'Jun-26', '2026-07': 'Jul-26', '2026-08': 'Aug-26', '2026-09': 'Sep-26', '2026-10': 'Oct-26',
   '2026-11': 'Nov-26', '2026-12': 'Dec-26', '2027-01': 'Jan-27', '2027-02': 'Feb-27', '2027-03': 'Mar-27',
 };
@@ -56,7 +56,7 @@ function sumRows(rows) {
   }, { enrolled: 0, saved: 0, complete: 0, incomplete: 0, absent: 0, pending: 0, U: 0, P: 0, N: 0 });
 }
 
-const generatedText = (generatedAt) => {
+export const generatedText = (generatedAt) => {
   try {
     return new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(generatedAt);
   } catch {
@@ -160,20 +160,20 @@ export function scopeMeta(level, { district = '', block = '' } = {}, generatedAt
 const metaOf = (report, generatedAt) => report.meta || schoolMeta(report.school, generatedAt);
 
 // ---------- Styled report (ExcelJS) ----------
-const FONT = 'Nirmala UI';
-const NAVY = 'FF17306B';
-const BLUE = 'FF2B66B4';
-const PALE = 'FFEAF1FB';
-const GREY = 'FF6B7B8C';
-const TONES = {
+export const FONT = 'Nirmala UI';
+export const NAVY = 'FF17306B';
+export const BLUE = 'FF2B66B4';
+export const PALE = 'FFEAF1FB';
+export const GREY = 'FF6B7B8C';
+export const TONES = {
   uday: { head: 'FFF5A024', fill: 'FFFFF1DC' },
   pragati: { head: 'FFE8509B', fill: 'FFFFE4F0' },
   nipun: { head: 'FF1EA45C', fill: 'FFE1F5E9' },
 };
 const thin = { style: 'thin', color: { argb: 'FFB8C6D8' } };
-const BORDER = { top: thin, left: thin, bottom: thin, right: thin };
+export const BORDER = { top: thin, left: thin, bottom: thin, right: thin };
 
-function paint(cell, { value, bold = false, size = 10, color = 'FF14243A', fill, align = 'center', wrap = true, border = true, italic = false, numFmt } = {}) {
+export function paint(cell, { value, bold = false, size = 10, color = 'FF14243A', fill, align = 'center', wrap = true, border = true, italic = false, numFmt } = {}) {
   if (value !== undefined) cell.value = value;
   cell.font = { name: FONT, size, bold, italic, color: { argb: color } };
   cell.alignment = { horizontal: align, vertical: 'middle', wrapText: wrap };
@@ -182,7 +182,7 @@ function paint(cell, { value, bold = false, size = 10, color = 'FF14243A', fill,
   if (numFmt) cell.numFmt = numFmt;
 }
 
-function mergePaint(ws, range, options) {
+export function mergePaint(ws, range, options) {
   ws.mergeCells(range);
   const first = range.split(':')[0];
   paint(ws.getCell(first), options);
@@ -201,7 +201,7 @@ function mergePaint(ws, range, options) {
   }
 }
 
-function pageSetup(ws, { titleRows, landscape = true, fitHeight = 0 } = {}) {
+export function pageSetup(ws, { titleRows, landscape = true, fitHeight = 0 } = {}) {
   ws.pageSetup = {
     paperSize: 9, orientation: landscape ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: fitHeight,
     margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 },
@@ -212,7 +212,7 @@ function pageSetup(ws, { titleRows, landscape = true, fitHeight = 0 } = {}) {
   ws.views = [{ ...ws.views?.[0], showGridLines: false }];
 }
 
-function titleBlock(ws, lastCol, titleGu, titleEn, line) {
+export function titleBlock(ws, lastCol, titleGu, titleEn, line) {
   mergePaint(ws, `A1:${lastCol}1`, { value: titleGu, bold: true, size: 17, color: 'FFFFFFFF', fill: NAVY, border: false });
   mergePaint(ws, `A2:${lastCol}2`, { value: titleEn, bold: true, size: 11, color: 'FFFFFFFF', fill: BLUE, border: false });
   mergePaint(ws, `A3:${lastCol}3`, {
@@ -224,7 +224,7 @@ function titleBlock(ws, lastCol, titleGu, titleEn, line) {
   ws.getRow(3).height = 20;
 }
 
-function headerCell(cell, pair, fill = NAVY, color = 'FFFFFFFF') {
+export function headerCell(cell, pair, fill = NAVY, color = 'FFFFFFFF') {
   paint(cell, { value: bi(pair), bold: true, size: 10, color, fill });
 }
 

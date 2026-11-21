@@ -22,6 +22,8 @@ const REPORT_STATUS = [
   ['pending', 'બાકી'],
 ];
 
+const shortId = (id) => String(id || '').slice(0, 8);
+
 function errorMessage(error) {
   const context = error?.context;
   if (context instanceof Response) {
@@ -368,14 +370,14 @@ export default function AdminReports({ supabase, profile }) {
           <div className="card dash-card">
             <h3>Student-wise assessment history (પાનું {report.page})</h3>
             <div className="scroll dash-scroll"><table className="dash-table">
-              <thead><tr><th>સાચવેલ સમય / Saved Time</th><th>Month</th><th className="left">શાળા</th><th className="left">વિદ્યાર્થી / ID</th><th>ધોરણ</th><th>સ્થિતિ</th><th>હા/કુલ / Yes / Total</th><th className="wide">જવાબો / Answers</th></tr></thead>
+              <thead><tr><th>સાચવેલ સમય / Saved Time</th><th>Month</th><th className="left">શાળા / School</th><th className="left">વિદ્યાર્થી / Student</th><th>ધોરણ / Class</th><th>સ્થિતિ / Status</th><th>હા/કુલ / Yes / Total</th><th className="wide">જવાબો / Answers</th></tr></thead>
               <tbody>{report.entries.map((item) => {
                 const ans = Object.entries(item.answers || {}).filter(([, value]) => typeof value === 'boolean');
                 return (
                   <tr key={`${item.studentId}-${item.month}-${item.dhoran}`}>
                     <td>{new Date(item.savedAt).toLocaleString()}</td><td>{item.month}</td>
                     <td className="left">{item.schoolName}<small> · {item.schoolCode}</small></td>
-                    <td className="left">{item.student}<small> · {item.studentId}</small></td>
+                    <td className="left">{item.student}<small> · રજિસ્ટર નં. / Reg. {item.studentReg || shortId(item.studentId)}</small></td>
                     <td>{CLASSES[item.dhoran]?.label || item.dhoran}</td><td>{item.complete ? 'પૂર્ણ' : 'અપૂર્ણ'}</td>
                     <td><b>{ans.filter(([, v]) => v).length}/{CLASSES[item.dhoran]?.total}</b></td>
                     <td><div className="ans-wrap">{ans.map(([number, value]) => <span key={number} className={`ans-chip ${value ? 'y' : 'n'}`}>{number}</span>)}</div></td>
@@ -395,11 +397,11 @@ export default function AdminReports({ supabase, profile }) {
             <div className="card dash-card">
               <h3>Pending assessment students</h3>
               {report.pendingStudents.length ? <div className="scroll dash-scroll"><table className="dash-table">
-                <thead><tr><th>School ID</th><th className="left">શાળા</th><th className="left">જિલ્લો / District</th><th className="left">બ્લોક / Block</th><th>ધોરણ</th><th className="left">વિદ્યાર્થી</th><th>Student ID</th></tr></thead>
+                <thead><tr><th>શાળા કોડ<br />School Code</th><th className="left">શાળા<br />School</th><th className="left">જિલ્લો<br />District</th><th className="left">બ્લોક<br />Block</th><th>ધોરણ<br />Class</th><th className="left">વિદ્યાર્થી<br />Student</th><th>રજિસ્ટર નં.<br />Reg. No.</th></tr></thead>
                 <tbody>{report.pendingStudents.map((student) => <tr key={`${student.schoolCode}:${student.studentId}:${student.dhoran}`}>
                   <td>{student.schoolCode}</td><td className="left">{student.schoolName}</td><td className="left">{student.district}</td>
                   <td className="left">{student.block}</td><td>{CLASSES[student.dhoran]?.label || student.dhoran}</td>
-                  <td className="left">{student.studentName}</td><td>{student.studentId}</td>
+                  <td className="left">{student.studentName}</td><td title={student.studentId}>{student.studentReg || shortId(student.studentId)}</td>
                 </tr>)}</tbody>
               </table></div> : <p className="muted">આ filters માટે pending વિદ્યાર્થી નથી.</p>}
             </div>

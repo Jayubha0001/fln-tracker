@@ -191,3 +191,28 @@ Dashboard: FLN સિદ્ધિ gauge caption overlap fix; month English (Nov-
 English: Entry, Summary(+guide), Students, School/Student Management panels, DataCheck, SchoolTools, Reports, Login, ErrorBoundary vagere ma "ગુજરાતી / English"
 DEPLOY: fakt  npx supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv --use-api   (pachhi frontend: vercel preview -> --prod)
 Verify: Admin dashboard -> "Annual State Report"; Botad par click -> "Annual District Report"; block par click -> "Annual Block Report"
+
+## 20. Student-wise (vidhan/question pramane) Report + Register No. + Summary tab hide
+Navu action: admin-reports -> "student-question-report" (level: state|district|block|school, month, grade optional)
+- Dashboard hero ma "⬇ વિદ્યાર્થી-વાર Report / Student-wise Report" (drill-down level + selected month + ધોરણ chip mujab)
+- Excel: સારાંશ, ધોરણ-vaar sheet (darek vidyarthi ni line, Q1..Qn ✓/✗, હા, જવાબ, પરિણામ, tarikh, "હા %" footer, filter), વિધાન યાદી (Question Key)
+- ગેરહાજર = grey line + "ગેરહાજર / Absent"; baki = "બાકી / Pending"
+- Server par scope check (RLS + code prefix): District potano jillo/block, Block potano block, School potani shala; bija 403/404
+Register No.: "Student ID (UUID)" ni jagya e register no. (Pending students table + Excel ma "Register No." column; UUID Excel ma alag column)
+Summary & Analytics tab hide: src\lib\features.js -> SHOW_SUMMARY = false (true karo to pachho dekhase)
+Files: supabase\functions\_shared\studentQuestionReport.js, studentQuestionWorkbook.js, statements.js (NAVI), reportMetrics.js, admin-reports\index.ts,
+       src\components\StudentQuestionReportButton.jsx (NAVI), src\lib\features.js (NAVI), DashboardLayout.jsx, AdminPanel.jsx, AdminDashboard.jsx, AdminReports.jsx,
+       tests\studentQuestionReport.test.js (NAVI), tests\adminReportMetrics.test.js
+DEPLOY: npx supabase functions deploy admin-reports --project-ref nutnaymoiazrhhwgqlyv --use-api   (pachhi frontend: vercel preview -> --prod)
+
+## 21. API (school/student add), student-wise report menu, badhi functions ek sathe
+NAVU function: fln-api  (verify_jwt = true)   -> docs\API.md, tools\fln-api.mjs (CLI), app ma "🔌 API" panel
+- Admin: badhi shala/vidyarthi; District/Block: potano vistar; School: potani shala ma vidyarthi
+- add-students / add-school / add-schools / list-students / list-schools; duplicate skip; max 500 vidyarthi / 200 shala per call
+વાર્ષિક શાળા FLN Report: button have "માસ + ધોરણ" sathe be report no menu (Annual + Student-wise) - account table, School tab, Annual report tab ma
+Navi tools (badhi functions chalu karva):
+  npx supabase login ; (optional) $env:ADMIN_TEMPORARY_PASSWORD="Admin@987"
+  npm run deploy:functions      # supabase\functions ni badhi (8) functions deploy + secret + check
+  npm run check:functions       # kaya deploy chhe / nathi
+App ma: Admin -> School Management -> "System / Functions Status"
+Extras: તપાસ ma "સમાન નામના વિદ્યાર્થી" (duplicate) + "બધા વિદ્યાર્થી Excel"

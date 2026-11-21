@@ -148,7 +148,7 @@ test('lists enrolled students without a matching submission in the selected repo
   ];
   const students = [
     { id: 'submitted', name: 'Submitted', school_id: 'school-a', dhoran: '2' },
-    { id: 'pending-a', name: 'Pending A', school_id: 'school-a', dhoran: '2' },
+    { id: 'pending-a', name: 'Pending A', reg: '', school_id: 'school-a', dhoran: '2' },
     { id: 'pending-b', name: 'Pending B', school_id: 'school-b', dhoran: 'B' },
     { id: 'other-grade', name: 'Other Grade', school_id: 'school-a', dhoran: '1' },
   ];
@@ -163,6 +163,7 @@ test('lists enrolled students without a matching submission in the selected repo
       block: 'U',
       studentId: 'pending-b',
       studentName: 'Pending B',
+      studentReg: '',
       dhoran: 'B',
     },
     {
@@ -173,7 +174,16 @@ test('lists enrolled students without a matching submission in the selected repo
       block: 'T',
       studentId: 'pending-a',
       studentName: 'Pending A',
+      studentReg: '',
       dhoran: '2',
     },
   ]);
+});
+
+test('pending students carry the register number so the report can show it instead of the UUID', () => {
+  const schools = [{ id: 'school-a', code: '2', name: 'A', district: 'D', block: 'T' }];
+  const students = [{ id: 'uuid-1', name: 'Pending A', reg: '117', school_id: 'school-a', dhoran: '2' }];
+  const [pending] = buildPendingStudents(schools, students, [], ['2']);
+  assert.equal(pending.studentReg, '117');
+  assert.equal(pending.studentId, 'uuid-1');
 });

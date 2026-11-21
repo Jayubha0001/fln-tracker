@@ -6,10 +6,11 @@ import Entry from './Entry.jsx';
 import Students from './Students.jsx';
 import Summary from './Summary.jsx';
 import DashboardLayout from '../components/DashboardLayout.jsx';
-import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
+import SchoolReportMenu from '../components/SchoolReportMenu.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 import { ScopedSchoolTools } from '../components/SchoolTools.jsx';
 import DataCheck from '../components/DataCheck.jsx';
+import ApiHelp from '../components/ApiHelp.jsx';
 
 export default function ScopedDashboard({ supabase, profile, onSignOut }) {
   const [schools, setSchools] = useState([]);
@@ -134,8 +135,19 @@ export default function ScopedDashboard({ supabase, profile, onSignOut }) {
           <section className="card">
             <h3>{school.name} · {school.code}</h3>
             <p className="muted">{school.district} › {school.block} · {school.cluster || ''}</p>
-            <SchoolYearReportButton supabase={supabase} school={school} />
+            <SchoolReportMenu supabase={supabase} school={school} />
           </section>
+        )}
+        {(activeSection === 'schools' || activeSection === 'students') && (
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">🔌</span>
+              <b>API: શાળા / વિદ્યાર્થી ઉમેરો / Add schools & students by API</b>
+              <small>curl / CLI</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><ApiHelp supabase={supabase} /></div>
+          </details>
         )}
         {activeSection === 'schools' && (
           <ScopedSchoolTools supabase={supabase} onChanged={() => setReloadKey((value) => value + 1)} />

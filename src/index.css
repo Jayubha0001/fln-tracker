@@ -928,3 +928,20 @@ td.zero-cell { color: #b02a74; font-weight: 800; background: #fff1f1; }
 .dash-gauge > span { font-size: 11px; text-align: center; max-width: 240px; line-height: 1.35; }
 .scope-year-report-action, .school-year-report-action { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .scope-year-report-action .error { font-size: 12px; max-width: 320px; }
+
+/* ---- School report menu (modal) ---- */
+.modal-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(10, 24, 46, .55); backdrop-filter: blur(2px); }
+.modal-card { width: min(640px, 100%); max-height: 90vh; overflow: auto; padding: 16px 18px; border-radius: 18px; background: #fff; box-shadow: 0 24px 60px #0b1a2e66; }
+.modal-card h3 { margin: 0; }
+.report-options { display: grid; gap: 14px; }
+.report-options section { padding: 12px; border-radius: 14px; border: 1px solid #dde7f4; background: #f7faff; }
+.report-options h4 { margin: 0 0 4px; font-size: 14px; color: #14243a; }
+.report-options .row { gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+.scoped-account-actions .act-report { background: #efe9fd; border-color: #cdbdf5; color: #4a2fa8; }
+
+/* ---- API help / function status ---- */
+.copy-block { position: relative; margin: 6px 0 10px; }
+.copy-block pre { margin: 0; padding: 10px 12px; border-radius: 10px; background: #0f2338; color: #d8e8ff; font-size: 12px; line-height: 1.5; overflow: auto; white-space: pre; }
+.copy-block button { position: absolute; top: 6px; right: 6px; min-height: 24px; padding: 1px 10px; font-size: 11px; }
+.api-help h4 { margin: 8px 0 2px; font-size: 13px; }
+.function-status .list li { align-items: center; gap: 10px; }

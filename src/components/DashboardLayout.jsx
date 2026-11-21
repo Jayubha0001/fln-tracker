@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SHOW_SUMMARY } from '../lib/features.js';
 
 const NAVIGATION = {
   admin: [
@@ -7,7 +8,6 @@ const NAVIGATION = {
     ['school-management', 'School Management', 'શાળા વ્યવસ્થાપન', '⌂'],
     ['student-management', 'Student Management', 'વિદ્યાર્થી વ્યવસ્થાપન', '♙'],
     ['entry', 'FLN Entry', 'FLN એન્ટ્રી', '✎'],
-    ['summary', 'Summary & Analytics', 'સારાંશ અને વિશ્લેષણ', '▥'],
     ['accounts', 'Login & Password Management', 'લૉગિન અને પાસવર્ડ', '▣'],
   ],
   district: [
@@ -17,7 +17,6 @@ const NAVIGATION = {
     ['schools', 'School Management', 'શાળા વ્યવસ્થાપન', '⌂'],
     ['students', 'Student Management', 'વિદ્યાર્થી વ્યવસ્થાપન', '♙'],
     ['entry', 'FLN Entry', 'FLN એન્ટ્રી', '✎'],
-    ['summary', 'Summary & Analytics', 'સારાંશ અને વિશ્લેષણ', '▥'],
   ],
   block: [
     ['dashboard', 'Dashboard', 'મુખ્ય સારાંશ', '▦'],
@@ -26,17 +25,25 @@ const NAVIGATION = {
     ['schools', 'School Management', 'શાળા વ્યવસ્થાપન', '⌂'],
     ['students', 'Student Management', 'વિદ્યાર્થી વ્યવસ્થાપન', '♙'],
     ['entry', 'FLN Entry', 'FLN એન્ટ્રી', '✎'],
-    ['summary', 'Summary & Analytics', 'સારાંશ અને વિશ્લેષણ', '▥'],
   ],
   school: [
     ['dashboard', 'Dashboard', 'મુખ્ય સારાંશ', '▦'],
     ['students', 'Student Management', 'વિદ્યાર્થી વ્યવસ્થાપન', '♙'],
     ['entry', 'FLN Entry', 'FLN એન્ટ્રી', '✎'],
-    ['summary', 'Summary & Analytics', 'સારાંશ અને વિશ્લેષણ', '▥'],
     ['reports', 'School Reports', 'શાળા રિપોર્ટ', '▤'],
     ['annual-report', 'Annual FLN Report', 'વાર્ષિક FLN રિપોર્ટ', '⇩'],
   ],
 };
+
+const SUMMARY_ITEM = ['summary', 'Summary & Analytics', 'સારાંશ અને વિશ્લેષણ', '▥'];
+
+// Summary & Analytics tab: src/lib/features.js ma SHOW_SUMMARY = true karo to pachho dekhase.
+function navigationFor(role) {
+  const items = NAVIGATION[role] || [];
+  if (!SHOW_SUMMARY) return items;
+  const at = items.findIndex((item) => item[0] === 'entry') + 1;
+  return [...items.slice(0, at), SUMMARY_ITEM, ...items.slice(at)];
+}
 
 const ICON_PATHS = {
   dashboard: 'M4 13h7V4H4v9zm9 7h7V11h-7v9zM4 20h7v-5H4v5zm9-11h7V4h-7v5z',
@@ -78,7 +85,7 @@ export default function DashboardLayout({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const navigation = NAVIGATION[role] || [];
+  const navigation = navigationFor(role);
   const activeItem = navigation.find(([key]) => key === activeSection) || navigation[0];
 
   useEffect(() => {

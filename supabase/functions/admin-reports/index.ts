@@ -11,6 +11,8 @@ import {
 import { GRADE_RULES } from '../_shared/assessmentRules.js';
 import { buildSchoolYearRows, SCHOOL_YEAR_MONTHS } from '../_shared/schoolYearReport.js';
 import { buildSchoolYearWorkbook, schoolYearPlainTables, scopeMeta } from '../_shared/schoolYearWorkbook.js';
+import { assembleStudentQuestionRows } from '../_shared/studentQuestionReport.js';
+import { buildStudentQuestionWorkbook, studentQuestionMeta, studentQuestionPlainTables } from '../_shared/studentQuestionWorkbook.js';
 import { assembleScopeYearReport, CHILD_GROUP, SCOPE_GRADES, sampleSchoolInScope, scopeLevelAllowed } from '../_shared/scopeYearReport.js';
 import { canAccessSchoolReport, reportScope } from '../_shared/reportAuthorization.js';
 
@@ -54,7 +56,7 @@ type Entry = {
   assessment_date: string | null;
   updated_at: string;
   answers: Record<string, boolean>;
-  student: { name: string };
+  student: { name: string; reg?: string };
   school: School;
 };
 
@@ -159,10 +161,10 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
   }
   const canonicalEntries = deduplicateAssessmentEntries(rawEntries);
   const studentIds = [...new Set(canonicalEntries.map((entry) => entry.student_id))];
-  const studentMap = new Map<string, { name: string; school_id: string }>();
+  const studentMap = new Map<string, { name: string; reg?: string; school_id: string }>();
   for (let offset = 0; offset < studentIds.length; offset += 500) {
     const ids = studentIds.slice(offset, offset + 500);
-    const { data, error } = await client.from('students').select('id,name,school_id').in('id', ids);
+    const { data, error } = await client.from('students').select('id,name,reg,school_id').in('id', ids);
     if (error) throw error;
     for (const student of data || []) studentMap.set(student.id, student);
   }
@@ -170,17 +172,17 @@ async function buildReport(client: ReturnType<typeof createClient>, filters: Fil
     const student = studentMap.get(entry.student_id);
     const school = schoolMap.get(entry.school_id);
     return student && school && student.school_id === school.id
-      ? [{ ...entry, student: { name: student.name }, school }]
+      ? [{ ...entry, student: { name: student.name, reg: student.reg || '' }, school }]
       : [];
   });
 
   const enrollmentBySchoolGrade = new Map<string, number>();
-  const enrolledStudents: { id: string; name: string; school_id: string; dhoran: string }[] = [];
+  const enrolledStudents: { id: string; name: string; reg?: string; school_id: string; dhoran: string }[] = [];
   const allSchools = (schools as School[]);
   for (let offset = 0; offset < allSchools.length; offset += 200) {
     const batch = allSchools.slice(offset, offset + 200);
     const ids = batch.map((item) => item.id);
-    const studentQuery = client.from('students').select('id,name,school_id,dhoran').in('school_id', ids);
+    const studentQuery = client.from('students').select('id,name,reg,school_id,dhoran').in('school_id', ids);
     if (filters.dhoran) studentQuery.eq('dhoran', filters.dhoran);
     const students = await loadRows(
       studentQuery,
@@ -301,9 +303,20 @@ function aggregateSchoolMetrics(
     || String(left.block || '').localeCompare(String(right.block || '')));
 }
 
-type ScopeYearRequest = { level?: unknown; district?: unknown; block?: unknown };
+type ScopeYearRequest = { level?: unknown; district?: unknown; block?: unknown; month?: unknown; grade?: unknown };
 const cleanName = (value: unknown) => (typeof value === 'string' ? value.trim().slice(0, 120) : '');
 const asciiSlug = (value: string) => value.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'all';
+
+// Active schools of a State / District / Block, read through the caller's RLS and checked against the caller's code scope.
+async function resolveScopeSchools(client: ReturnType<typeof createClient>, scope: ReportScope, level: string, district: string, block: string) {
+  let schoolQuery = client.from('schools').select('id,code,name,district,block').eq('active', true);
+  if (level !== 'state') schoolQuery = schoolQuery.eq('district', district);
+  if (level === 'block') schoolQuery = schoolQuery.eq('block', block);
+  const schools = await loadRows(schoolQuery.order('code'), PAGE_SIZE, MAX_REPORT_ROWS);
+  if (!schools.length) return { status: 404, error: 'આ વિસ્તારની શાળાઓ મળી નથી અથવા પરવાનગી નથી.' };
+  if (!sampleSchoolInScope(scope, level, schools[0].code)) return { status: 403, error: 'આ વિસ્તારનો report તમારા accountને મળતો નથી.' };
+  return { status: 200, schools };
+}
 
 // State / District / Block annual report: numbers come from fln_group_stats (SQL) through the caller's own JWT (RLS).
 async function buildScopeYearReport(client: ReturnType<typeof createClient>, scope: ReportScope, request: ScopeYearRequest) {
@@ -313,12 +326,9 @@ async function buildScopeYearReport(client: ReturnType<typeof createClient>, sco
   const block = cleanName(request.block);
   if ((level !== 'state' && !district) || (level === 'block' && !block)) return { status: 400, error: 'જિલ્લો/તાલુકો આપવો જરૂરી છે.' };
 
-  let schoolQuery = client.from('schools').select('id,code,district,block').eq('active', true);
-  if (level !== 'state') schoolQuery = schoolQuery.eq('district', district);
-  if (level === 'block') schoolQuery = schoolQuery.eq('block', block);
-  const schools = await loadRows(schoolQuery.order('code'), PAGE_SIZE, MAX_REPORT_ROWS);
-  if (!schools.length) return { status: 404, error: 'આ વિસ્તારની શાળાઓ મળી નથી અથવા પરવાનગી નથી.' };
-  if (!sampleSchoolInScope(scope, level, schools[0].code)) return { status: 403, error: 'આ વિસ્તારનો report તમારા accountને મળતો નથી.' };
+  const resolved = await resolveScopeSchools(client, scope, level, district, block);
+  if (!resolved.schools) return { status: resolved.status, error: resolved.error };
+  const schools = resolved.schools;
 
   const rpcArgs = (grade: string | null, month: string | null, group: string) => ({
     p_group: group,
@@ -356,6 +366,70 @@ async function buildScopeYearReport(client: ReturnType<typeof createClient>, sco
     report: { ...report, meta: scopeMeta(level, { district, block }, new Date(), schools.length) },
     fileName: `fln-${level}-${asciiSlug(level === 'state' ? 'gujarat' : level === 'district' ? district : `${district}-${block}`)}-2026-27.xlsx`,
   };
+}
+
+type StudentQuestionRequest = ScopeYearRequest & { schoolId?: unknown; month?: unknown; grade?: unknown };
+
+// Student-wise report, question (statement) by question: rows for a School / Block / District / State and one month.
+async function buildStudentQuestionReport(client: ReturnType<typeof createClient>, scope: ReportScope, request: StudentQuestionRequest) {
+  const level = String(request.level ?? '');
+  const month = String(request.month ?? '');
+  const grade = String(request.grade ?? '');
+  if (!SCHOOL_YEAR_MONTHS.some((item) => item.key === month)) return { status: 400, error: 'માન્ય માસ પસંદ કરો.' };
+  if (grade && !SCOPE_GRADES.includes(grade)) return { status: 400, error: 'માન્ય ધોરણ પસંદ કરો.' };
+  const district = cleanName(request.district);
+  const block = cleanName(request.block);
+  let schools: Array<{ id: string; code: string; name: string; district: string; block: string }> = [];
+  let school: { id: string; code: string; name: string; district: string; block: string } | null = null;
+  if (level === 'school') {
+    const schoolId = String(request.schoolId ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(schoolId)) return { status: 400, error: 'અમાન્ય શાળા.' };
+    const { data, error } = await client.from('schools').select('id,code,name,district,block').eq('id', schoolId).maybeSingle();
+    if (error) throw error;
+    if (!data || !canAccessSchoolReport(scope, data)) return { status: 404, error: 'શાળા મળી નથી અથવા પરવાનગી નથી.' };
+    school = data;
+    schools = [data];
+  } else {
+    if (!scopeLevelAllowed(scope, level)) return { status: 403, error: 'આ સ્તરનો report તમારા accountને મળતો નથી.' };
+    if ((level !== 'state' && !district) || (level === 'block' && !block)) return { status: 400, error: 'જિલ્લો/તાલુકો આપવો જરૂરી છે.' };
+    const resolved = await resolveScopeSchools(client, scope, level, district, block);
+    if (!resolved.schools) return { status: resolved.status, error: resolved.error };
+    schools = resolved.schools;
+  }
+  const schoolsById = new Map(schools.map((item) => [item.id, item]));
+  const students: Array<{ id: string; name: string; reg?: string; school_id: string; dhoran: string }> = [];
+  const entries: Array<{ student_id: string; dhoran: string; answers: Record<string, unknown>; assessment_date: string | null; updated_at: string }> = [];
+  for (let offset = 0; offset < schools.length; offset += 100) {
+    const ids = schools.slice(offset, offset + 100).map((item) => item.id);
+    let studentQuery = client.from('students').select('id,name,reg,school_id,dhoran').in('school_id', ids);
+    if (grade) studentQuery = studentQuery.eq('dhoran', grade);
+    students.push(...await loadRows(studentQuery.order('id'), PAGE_SIZE, MAX_REPORT_ROWS));
+    let entryQuery = client.from('entries').select('student_id,school_id,dhoran,answers,assessment_date,updated_at').eq('month', month).in('school_id', ids);
+    if (grade) entryQuery = entryQuery.eq('dhoran', grade);
+    entries.push(...await loadRows(entryQuery.order('student_id'), PAGE_SIZE, MAX_REPORT_ROWS));
+  }
+  const data = assembleStudentQuestionRows({ students, entries, schoolsById, grade });
+  const slug = level === 'school' ? asciiSlug(school?.code || 'school') : level === 'state' ? 'gujarat' : asciiSlug(level === 'district' ? district : `${district}-${block}`);
+  return {
+    status: 200,
+    data,
+    meta: studentQuestionMeta({ level, district, block, school, month }),
+    fileName: `fln-students-${level}-${slug}-${month}${grade ? `-${grade}` : ''}.xlsx`,
+  };
+}
+
+// deno-lint-ignore no-explicit-any
+async function studentQuestionWorkbookBytes(data: any, meta: any) {
+  try {
+    const { default: ExcelJS } = await import('npm:exceljs@4.4.0');
+    const workbook = buildStudentQuestionWorkbook(ExcelJS, data, meta);
+    return new Uint8Array(await workbook.xlsx.writeBuffer());
+  } catch (cause) {
+    console.error('Styled student report failed; sending plain bilingual workbook:', cause instanceof Error ? cause.message : cause);
+    const workbook = XLSX.utils.book_new();
+    for (const table of studentQuestionPlainTables(data, meta)) XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(table.rows), table.name);
+    return XLSX.write(workbook, { type: 'array', bookType: 'xlsx', compression: true });
+  }
 }
 
 async function buildSchoolYearReport(client: ReturnType<typeof createClient>, schoolId: string, scope: ReportScope) {
@@ -501,11 +575,11 @@ function makeWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: 
     row.month, row.enrolled, row.submitted, row.complete, row.incomplete, row.pending,
   ]), [20, 14, 14, 14, 14, 14]);
   appendWorkbookTable(workbook, 'Pending students', [
-    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Student UUID', 'Grade',
+    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Register No.', 'Student UUID', 'Grade',
   ], report.pendingStudents.map((student) => [
     student.schoolCode, student.schoolName, student.district, student.block,
-    student.studentName, student.studentId, student.dhoran,
-  ]), [14, 28, 22, 22, 28, 38, 12]);
+    student.studentName, student.studentReg || '', student.studentId, student.dhoran,
+  ]), [14, 28, 22, 22, 28, 14, 38, 12]);
   appendWorkbookTable(workbook, 'Totals', ['Metric', 'Value'], [
     ['Schools', report.totals.schools],
     ['Enrolled', report.totals.enrolled],
@@ -528,7 +602,7 @@ function makeIncompleteWorkbook(report: Awaited<ReturnType<typeof buildReport>>,
   const workbook = XLSX.utils.book_new();
   const incomplete = report.entries.filter((entry) => !assessmentCompletion(entry));
   appendWorkbookTable(workbook, 'Incomplete assessments', [
-    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Student UUID',
+    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Register No.', 'Student UUID',
     'Grade', 'Assessment Month', 'Answered Outcomes', 'Required Outcomes', 'Saved At',
   ], incomplete.map((entry) => [
     entry.school.code,
@@ -536,13 +610,14 @@ function makeIncompleteWorkbook(report: Awaited<ReturnType<typeof buildReport>>,
     entry.school.district,
     entry.school.block,
     entry.student.name,
+    entry.student.reg || '',
     entry.student_id,
     entry.dhoran,
     entry.month,
     Object.values(entry.answers || {}).filter((value) => typeof value === 'boolean').length,
     GRADE_RULES[entry.dhoran]?.statementIds.length || 0,
     entry.updated_at,
-  ]), [14, 28, 22, 22, 28, 38, 12, 16, 18, 18, 23]);
+  ]), [14, 28, 22, 22, 28, 14, 38, 12, 16, 18, 18, 23]);
   appendWorkbookTable(workbook, 'Filters', ['Metric', 'Value'], [
     ['Incomplete assessments', incomplete.length],
     ['Saved-at date range', `${filters.startDate} to ${filters.endDate}`],
@@ -557,11 +632,11 @@ function makeIncompleteWorkbook(report: Awaited<ReturnType<typeof buildReport>>,
 function makePendingWorkbook(report: Awaited<ReturnType<typeof buildReport>>, filters: Filters) {
   const workbook = XLSX.utils.book_new();
   appendWorkbookTable(workbook, 'Pending students', [
-    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Student UUID', 'Grade',
+    'School Code', 'School Name', 'District', 'Block', 'Student Name', 'Register No.', 'Student UUID', 'Grade',
   ], report.pendingStudents.map((student) => [
     student.schoolCode, student.schoolName, student.district, student.block,
-    student.studentName, student.studentId, student.dhoran,
-  ]), [14, 28, 22, 22, 28, 38, 12]);
+    student.studentName, student.studentReg || '', student.studentId, student.dhoran,
+  ]), [14, 28, 22, 22, 28, 14, 38, 12]);
   appendWorkbookTable(workbook, 'Filters', ['Metric', 'Value'], [
     ['Pending students', report.pendingStudents.length],
     ['Saved-at date range', `${filters.startDate} to ${filters.endDate}`],
@@ -605,13 +680,25 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  let body: { action?: unknown; filters?: unknown; page?: unknown; schoolId?: unknown; level?: unknown; district?: unknown; block?: unknown };
+  let body: { action?: unknown; filters?: unknown; page?: unknown; schoolId?: unknown; level?: unknown; district?: unknown; block?: unknown; month?: unknown; grade?: unknown };
   try {
     body = await request.json();
   } catch {
     return jsonResponse(400, { error: 'Request માન્ય JSON નથી.' });
   }
   try {
+    if (body.action === 'student-question-report') {
+      const result = await buildStudentQuestionReport(userClient, scope, body);
+      if (result.status !== 200 || !result.data) return jsonResponse(result.status, { error: result.error || 'Report બન્યો નથી.' });
+      return new Response(await studentQuestionWorkbookBytes(result.data, result.meta), {
+        headers: {
+          ...corsHeaders,
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${result.fileName}"`,
+        },
+      });
+    }
     if (body.action === 'scope-year-report') {
       const result = await buildScopeYearReport(userClient, scope, body);
       if (result.status !== 200 || !result.report) return jsonResponse(result.status, { error: result.error || 'Report બન્યો નથી.' });
@@ -700,6 +787,7 @@ Deno.serve(async (request) => {
         taluka: entry.school.block,
         student: entry.student.name,
         studentId: entry.student_id,
+        studentReg: entry.student.reg || '',
         dhoran: entry.dhoran,
         assessmentDate: entry.assessment_date,
         month: entry.month,

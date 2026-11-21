@@ -10,6 +10,9 @@ import AdminSchoolImport from './AdminSchoolImport.jsx';
 import AdminScopedAccountManagement from './AdminScopedAccountManagement.jsx';
 import { SchoolRemovePanel } from '../components/SchoolTools.jsx';
 import DataCheck from '../components/DataCheck.jsx';
+import ApiHelp from '../components/ApiHelp.jsx';
+import FunctionStatus from '../components/FunctionStatus.jsx';
+import { SHOW_SUMMARY } from '../lib/features.js';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 
 const emptySchool = {
@@ -164,6 +167,24 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           </details>
           <details className="tool">
             <summary>
+              <span className="tool-ico" aria-hidden="true">🔌</span>
+              <b>API: શાળા / વિદ્યાર્થી ઉમેરો / Add schools & students by API</b>
+              <small>curl / CLI</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><ApiHelp supabase={supabase} /></div>
+          </details>
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">⚙</span>
+              <b>System / Functions Status</b>
+              <small>badhi Edge Functions chalu chhe? / are all functions running?</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><FunctionStatus supabase={supabase} /></div>
+          </details>
+          <details className="tool">
+            <summary>
               <span className="tool-ico" aria-hidden="true">🔎</span>
               <b>તપાસ: શાળા ↔ વિદ્યાર્થી / Check: Schools ↔ Students</b>
               <small>વિદ્યાર્થી વગરની શાળા અને શાળા વગરના વિદ્યાર્થી / Schools without students and students without a school</small>
@@ -182,6 +203,17 @@ export default function AdminPanel({ supabase, profile, onSignOut }) {
           </details>
           <p className="muted">શાળા Login બનાવવા, પાસવર્ડ રીસેટ, School ID અને વાર્ષિક report માટે <b>Login &amp; Password Management</b> ટેબમાં “શાળા” પસંદ કરો.</p>
         </>
+      )}
+      {activeSection === 'student-management' && (
+        <details className="tool">
+          <summary>
+            <span className="tool-ico" aria-hidden="true">🔌</span>
+            <b>API: વિદ્યાર્થી ઉમેરો / Add students by API</b>
+            <small>curl / CLI</small>
+            <i className="tool-chev" aria-hidden="true">⌄</i>
+          </summary>
+          <div className="tool-body"><ApiHelp supabase={supabase} /></div>
+        </details>
       )}
       {activeSection === 'student-management' && (
         <details className="tool">
@@ -280,7 +312,7 @@ function AdminSchoolWorkspace({ supabase, schools, onEntryDirtyChange, initialTa
           <nav>
             <button className={tab === 'students' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('students'))}>વિદ્યાર્થી</button>
             <button className={tab === 'entry' ? 'on' : ''} onClick={() => setTab('entry')}>એન્ટ્રી</button>
-            <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>રિપોર્ટ / Report</button>
+            {SHOW_SUMMARY && <button className={tab === 'summary' ? 'on' : ''} onClick={() => leaveEntry(() => setTab('summary'))}>રિપોર્ટ / Report</button>}
           </nav>
           {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
           {tab === 'entry' && <Entry

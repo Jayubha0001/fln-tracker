@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from '@e965/xlsx';
 import { calc, CLASSES, MONTHS, currentMonthKey, monthEn } from '../lib/category';
 import ScopeYearReportButton from '../components/ScopeYearReportButton.jsx';
+import StudentQuestionReportButton from '../components/StudentQuestionReportButton.jsx';
 import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
 import { loadAllRows } from '../lib/loadAllRows';
 import DashboardOverview from '../components/DashboardOverview.jsx';
@@ -368,6 +369,17 @@ export default function AdminDashboard({ supabase, profile }) {
           <button type="button" onClick={exportExcel} disabled={busy}>⬇ Excel</button>
           {profile?.role !== 'school' && !scope.school && (profile?.role === 'admin' || (profile?.role === 'district' && scope.district) || (profile?.role === 'block' && scope.district && scope.block)) && (
             <ScopeYearReportButton supabase={supabase} district={scope.district || ''} block={scope.block || ''} />
+          )}
+          {(scope.school || profile?.role === 'admin' || (profile?.role === 'district' && scope.district) || (profile?.role === 'block' && scope.district && scope.block)) && (
+            <StudentQuestionReportButton
+              supabase={supabase}
+              district={scope.district || ''}
+              block={scope.block || ''}
+              schoolId={scope.school?.id || ''}
+              schoolCode={scope.school?.code || ''}
+              month={month}
+              grade={grade}
+            />
           )}
           {profile?.role !== 'school' && scope.school && <SchoolYearReportButton supabase={supabase} school={{ id: scope.school.id, code: scope.school.code }} />}
           <small>{updatedAt ? `અપડેટ / Updated: ${updatedAt.toLocaleTimeString()}` : ''}</small>

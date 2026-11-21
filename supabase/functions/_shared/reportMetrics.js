@@ -179,6 +179,7 @@ export function buildPendingStudents(schools, students, entries, grades) {
       block: school.block,
       studentId: student.id,
       studentName: student.name,
+      studentReg: student.reg || '',
       dhoran: student.dhoran,
     }];
   }).sort((left, right) =>

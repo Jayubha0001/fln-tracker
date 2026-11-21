@@ -9,7 +9,8 @@ import Entry from './pages/Entry.jsx';
 import SchoolSummary from './pages/SchoolSummary.jsx';
 import ChangePassword from './pages/ChangePassword.jsx';
 import ScopedDashboard from './pages/ScopedDashboard.jsx';
-import SchoolYearReportButton from './components/SchoolYearReportButton.jsx';
+import SchoolReportMenu from './components/SchoolReportMenu.jsx';
+import ApiHelp from './components/ApiHelp.jsx';
 import DashboardLayout from './components/DashboardLayout.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 import AdminReports from './pages/AdminReports.jsx';
@@ -245,6 +246,17 @@ function SchoolTracker({ supabase, school, onSignOut }) {
           school_code: school.code,
           school_name: school.name,
         }} />}
+        {tab === 'students' && (
+          <details className="tool">
+            <summary>
+              <span className="tool-ico" aria-hidden="true">🔌</span>
+              <b>API: વિદ્યાર્થી ઉમેરો / Add students by API</b>
+              <small>curl / CLI</small>
+              <i className="tool-chev" aria-hidden="true">⌄</i>
+            </summary>
+            <div className="tool-body"><ApiHelp supabase={supabase} /></div>
+          </details>
+        )}
         {tab === 'students' && <Students supabase={supabase} school={school} dhoran={dhoran} />}
         {tab === 'entry' && <Entry supabase={supabase} school={school} dhoran={dhoran} month={month} onDirtyChange={setEntryDirty} />}
         {tab === 'summary' && <SchoolSummary supabase={supabase} school={school} dhoran={dhoran} month={month} />}
@@ -253,7 +265,7 @@ function SchoolTracker({ supabase, school, onSignOut }) {
           <section className="card">
             <h2>વાર્ષિક શાળા FLN Report</h2>
             <p className="muted">{school.name} · {school.code}</p>
-            <SchoolYearReportButton supabase={supabase} school={school} />
+            <SchoolReportMenu supabase={supabase} school={school} inline />
           </section>
         )}
     </DashboardLayout>

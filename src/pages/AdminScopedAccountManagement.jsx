@@ -4,7 +4,7 @@ import { buildCredentialsWorkbook, accountOperationResult, confirmedCredential }
 import { accountTypesForRole } from '../lib/accountManagement.js';
 import { invokeAuthenticatedFunction } from '../lib/invokeAuthenticatedFunction.js';
 import { accountResetRequest, canResetAccount } from '../lib/accountResetRequest.js';
-import SchoolYearReportButton from '../components/SchoolYearReportButton.jsx';
+import SchoolReportMenu from '../components/SchoolReportMenu.jsx';
 
 const PAGE_SIZE = 50;
 const EMPTY_FILTERS = { district: '', block: '', school: '', status: '' };
@@ -563,7 +563,7 @@ export default function AdminScopedAccountManagement({
                         {profile?.role === 'admin' && (
                           <button type="button" className="act-edit" disabled={busy} onClick={() => editSchool(account)}>Edit School Details</button>
                         )}
-                        <SchoolYearReportButton supabase={supabase} school={school} />
+                        <SchoolReportMenu supabase={supabase} school={school} />
                       </>
                     )}
                   </td>

@@ -16,7 +16,7 @@ export default function DataCheck({ supabase, focus = 'school' }) {
     try {
       const [schools, students] = await Promise.all([
         loadAllRows(supabase.from('schools').select('id,code,name,district,block,active').order('code')),
-        loadAllRows(supabase.from('students').select('id,school_id').order('id')),
+        loadAllRows(supabase.from('students').select('id,school_id,name,dhoran,reg').order('id')),
       ]);
       const activeIds = new Set(schools.filter((item) => item.active).map((item) => item.id));
       const schoolById = new Map(schools.map((item) => [item.id, item]));
@@ -37,6 +37,17 @@ export default function DataCheck({ supabase, focus = 'school' }) {
         entry.count += 1;
         orphanMap.set(student.school_id, entry);
       });
+      // Possible duplicates: same school + class + normalized name
+      const dupMap = new Map();
+      students.forEach((student) => {
+        const key = `${student.school_id}|${student.dhoran}|${String(student.name || '').trim().replace(/\s+/g, ' ').toUpperCase()}`;
+        const list = dupMap.get(key) || [];
+        list.push(student);
+        dupMap.set(key, list);
+      });
+      const duplicates = [...dupMap.values()].filter((list) => list.length > 1).map((list) => ({
+        school: schoolById.get(list[0].school_id), name: list[0].name, dhoran: list[0].dhoran, count: list.length, regs: list.map((item) => item.reg).filter(Boolean).join(', '),
+      })).sort((a, b) => b.count - a.count);
       setState({
         status: 'done',
         error: '',
@@ -48,6 +59,8 @@ export default function DataCheck({ supabase, focus = 'school' }) {
             .map((item) => ({ ...item, count: countBySchool.get(item.id) || 0 }))
             .sort((a, b) => a.count - b.count || a.name.localeCompare(b.name)),
           orphans: [...orphanMap.values()].sort((a, b) => b.count - a.count),
+          duplicates,
+          studentRows: students.map((student) => ({ ...student, school: schoolById.get(student.school_id) })),
         },
       });
     } catch (cause) {
@@ -105,6 +118,36 @@ export default function DataCheck({ supabase, focus = 'school' }) {
       {shownSchools.length > 200 && <small className="muted">પહેલી 200 બતાવી છે ({shownSchools.length} માંથી); શોધ કે ફિલ્ટર વાપરો.</small>}
     </section>
   );
+  const duplicates = (result?.duplicates || []).filter((item) => !needle || `${item.name} ${item.school?.name || ''} ${item.school?.code || ''}`.toLowerCase().includes(needle));
+  const duplicateBlock = (
+    <section className="check-block" key="duplicates">
+      <h4>👥 સમાન નામના વિદ્યાર્થી / Possible duplicate students <span className={`check-pill ${result?.duplicates.length ? 'warn' : 'ok'}`}>{result?.duplicates.length ?? 0}</span></h4>
+      {!result?.duplicates.length
+        ? <p className="muted">✔ કોઈ સમાન નામ નથી / No duplicates found.</p>
+        : (
+          <ul className="list check-list">
+            {duplicates.slice(0, LIMIT).map((item, index) => (
+              <li key={`${item.school?.code}-${item.name}-${index}`}>
+                <span><b>{item.name}</b> <small>({item.dhoran === 'B' ? 'બાલવાટિકા / Balvatika' : `ધોરણ / Std ${item.dhoran}`})</small><br /><small className="muted">{item.school?.name} · {item.school?.code}{item.regs ? ` · Reg: ${item.regs}` : ''}</small></span>
+                <b>{item.count}×</b>
+              </li>
+            ))}
+          </ul>
+        )}
+    </section>
+  );
+
+  function exportStudents() {
+    const rows = result.studentRows.map((student) => ({
+      'જિલ્લો / District': student.school?.district || '', 'તાલુકો / Block': student.school?.block || '',
+      'શાળા કોડ / School Code': student.school?.code || '', 'શાળા / School': student.school?.name || '',
+      'ધોરણ / Class': student.dhoran === 'B' ? 'Balvatika' : `Std ${student.dhoran}`, 'વિદ્યાર્થી / Student': student.name, 'રજિસ્ટર નં. / Reg. No.': student.reg || '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Students');
+    XLSX.writeFile(wb, 'students_list.xlsx');
+  }
+
   const studentBlock = (
     <section className="check-block" key="students">
       <h4>👤 શાળા વગરના વિદ્યાર્થી / 👤 Students without a school <span className={`check-pill ${orphanTotal ? 'warn' : 'ok'}`}>{orphanTotal}</span></h4>
@@ -141,7 +184,10 @@ export default function DataCheck({ supabase, focus = 'school' }) {
             <span>શાળા વગરના વિદ્યાર્થી / Students without a school <b>{orphanTotal}</b></span>
           </div>
           <input type="search" placeholder="શાળા / કોડ શોધો… / Search school / code…" value={search} onChange={(event) => setSearch(event.target.value)} />
-          {focus === 'student' ? [studentBlock, schoolBlock] : [schoolBlock, studentBlock]}
+          <div className="row check-filters">
+            <button type="button" onClick={exportStudents}>⬇ બધા વિદ્યાર્થી Excel / All Students Excel ({result.studentCount.toLocaleString()})</button>
+          </div>
+          {focus === 'student' ? [studentBlock, duplicateBlock, schoolBlock] : [schoolBlock, studentBlock, duplicateBlock]}
         </>
       )}
     </div>

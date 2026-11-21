@@ -8,7 +8,10 @@
     "build": "vite build",
     "lint": "oxlint",
     "test": "node --test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:functions": "node tools/deploy-functions.mjs",
+    "check:functions": "node tools/check-functions.mjs",
+    "fln-api": "node tools/fln-api.mjs"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
